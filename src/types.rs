@@ -1,20 +1,26 @@
 
 
+
+use serde::{Serialize, Deserialize};
+
 /// The legal status (Hukum) of fasting on a specific day.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// 
+/// Ordered by priority for conflict resolution:
+/// Haram > Wajib > SunnahMuakkadah > Sunnah > Makruh > Mubah
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FastingStatus {
-    /// Permissible (Neutral). Default status for most days.
+    // Priority 0 (Lowest)
     Mubah,
-    /// Strongly Recommended (e.g., Arafah, Ashura).
-    SunnahMuakkadah,
-    /// Recommended (e.g., Monday/Thursday).
-    Sunnah,
-    /// Disliked (e.g., Singling out Friday).
+    // Priority 1
     Makruh,
-    /// Prohibited (e.g., Eid dates, Tashriq).
-    Haram,
-    /// Obligatory (Ramadhan).
+    // Priority 2
+    Sunnah,
+    // Priority 3
+    SunnahMuakkadah,
+    // Priority 4
     Wajib,
+    // Priority 5 (Highest)
+    Haram,
 }
 
 impl FastingStatus {
@@ -32,7 +38,7 @@ impl FastingStatus {
 }
 
 /// The specific reason or type of fasting associated with a day.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FastingType {
     Ramadhan,
     Arafah,
@@ -50,26 +56,62 @@ pub enum FastingType {
     SaturdayExclusive,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FastingAnalysis {
     pub date: chrono::NaiveDate,
     pub primary_status: FastingStatus,
     pub types: Vec<FastingType>,
-    pub description: String,
+    // Store Hijri date components for on-demand description generation
+    pub hijri_year: usize,
+    pub hijri_month: usize,
+    pub hijri_day: usize,
 }
 
 impl FastingAnalysis {
-    pub fn new(date: chrono::NaiveDate, status: FastingStatus, types: Vec<FastingType>) -> Self {
+    pub fn new(date: chrono::NaiveDate, status: FastingStatus, types: Vec<FastingType>, hijri: (usize, usize, usize)) -> Self {
         Self {
             date,
             primary_status: status,
             types,
-            description: String::new(),
+            hijri_year: hijri.0,
+            hijri_month: hijri.1,
+            hijri_day: hijri.2,
         }
     }
     
-    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
-        self.description = desc.into();
-        self
+    pub fn description(&self, localizer: &impl Localizer) -> String {
+        localizer.format_description(self)
+    }
+}
+
+pub trait Localizer {
+    fn month_name(&self, month: usize) -> String;
+    fn status_name(&self, status: FastingStatus) -> String;
+    fn type_name(&self, f_type: FastingType) -> String;
+    fn format_description(&self, analysis: &FastingAnalysis) -> String;
+}
+
+pub struct EnglishLocalizer;
+
+impl Localizer for EnglishLocalizer {
+    fn month_name(&self, month: usize) -> String {
+        crate::calendar::get_hijri_month_name(month).to_string()
+    }
+
+    fn status_name(&self, status: FastingStatus) -> String {
+        format!("{:?}", status)
+    }
+
+    fn type_name(&self, f_type: FastingType) -> String {
+        format!("{:?}", f_type)
+    }
+
+    fn format_description(&self, analysis: &FastingAnalysis) -> String {
+        format!(
+            "Hijri Date: {} {} {}", 
+            analysis.hijri_day, 
+            self.month_name(analysis.hijri_month), 
+            analysis.hijri_year
+        )
     }
 }

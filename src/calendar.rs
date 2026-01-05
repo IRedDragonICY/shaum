@@ -1,5 +1,13 @@
 use chrono::{Duration, Datelike, NaiveDate};
 use hijri_date::HijriDate;
+use thiserror::Error;
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Error, Serialize, Deserialize)]
+pub enum ShaumError {
+    #[error("Date out of supported Hijri range (1938-2076)")]
+    HijriConversionError,
+}
 
 /// Converts a Gregorian date to Hijri with a manual day adjustment.
 /// 
@@ -7,13 +15,13 @@ use hijri_date::HijriDate;
 /// * `date` - The Gregorian date.
 /// * `adjustment` - Day offset (e.g., +1 or -1) to account for moon sighting discrepancies.
 ///   A positive adjustment means the Hijri calendar is ahead (moon seen earlier).
-pub fn to_hijri(date: NaiveDate, adjustment: i64) -> HijriDate {
+pub fn to_hijri(date: NaiveDate, adjustment: i64) -> Result<HijriDate, ShaumError> {
     let adjusted_date = date + Duration::days(adjustment);
     HijriDate::from_gr(
         adjusted_date.year() as usize, 
         adjusted_date.month() as usize, 
         adjusted_date.day() as usize
-    ).expect("Date out of supported Hijri range (1938-2076)")
+    ).map_err(|_| ShaumError::HijriConversionError)
 }
 
 /// Helper to get Hijri month name or index if needed.

@@ -1,9 +1,18 @@
 use chrono::{Datelike, NaiveDate, Weekday};
-use crate::calendar::{to_hijri, get_hijri_month_name};
+use crate::calendar::{to_hijri, ShaumError};
 use crate::types::{FastingAnalysis, FastingStatus, FastingType};
 
-pub fn check(g_date: NaiveDate, adjustment: i64) -> FastingAnalysis {
-    let h_date = to_hijri(g_date, adjustment);
+pub trait MoonProvider {
+    fn get_adjustment(&self, date: NaiveDate) -> i64;
+}
+
+pub struct RuleContext {
+    pub adjustment: i64,
+    // Placeholders for future Madhab config
+}
+
+pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis, ShaumError> {
+    let h_date = to_hijri(g_date, context.adjustment)?;
     let h_month = h_date.month();
     let h_day = h_date.day();
     let weekday = g_date.weekday();
@@ -15,29 +24,24 @@ pub fn check(g_date: NaiveDate, adjustment: i64) -> FastingAnalysis {
     // Eid al-Fitr
     if h_month == 10 && h_day == 1 {
         types.push(FastingType::EidAlFitr);
-        return FastingAnalysis::new(g_date, FastingStatus::Haram, types)
-            .with_description("Haram to fast on Eid al-Fitr (1 Shawwal).");
+        return Ok(FastingAnalysis::new(g_date, FastingStatus::Haram, types, (h_date.year() as usize, h_month, h_day)));
     }
 
     // Eid al-Adha
     if h_month == 12 && h_day == 10 {
         types.push(FastingType::EidAlAdha);
-        return FastingAnalysis::new(g_date, FastingStatus::Haram, types)
-            .with_description("Haram to fast on Eid al-Adha (10 Dhu al-Hijjah).");
+        return Ok(FastingAnalysis::new(g_date, FastingStatus::Haram, types, (h_date.year() as usize, h_month, h_day)));
     }
 
     // Tashriq Days
     if h_month == 12 && (11..=13).contains(&h_day) {
         types.push(FastingType::Tashriq);
-        return FastingAnalysis::new(g_date, FastingStatus::Haram, types)
-            .with_description(format!("Haram to fast on Days of Tashriq ({} Dhu al-Hijjah).", h_day));
+        return Ok(FastingAnalysis::new(g_date, FastingStatus::Haram, types, (h_date.year() as usize, h_month, h_day)));
     }
 
     // --- 2. Wajib Checks ---
     if h_month == 9 {
         types.push(FastingType::Ramadhan);
-        // Even if it's Monday/Thursday, Ramadhan overrides Sunnah intention usually, 
-        // but technically it's still Monday. We'll add Monday too if applicable, but Status is Wajib.
         status = FastingStatus::Wajib;
     }
 
@@ -64,7 +68,6 @@ pub fn check(g_date: NaiveDate, adjustment: i64) -> FastingAnalysis {
     }
 
     // Ayyamul Bidh (13, 14, 15) - EXCLUDING 13 Dhu al-Hijjah (Handled by Haram above)
-    // We already returned if it was 13 Dhul Hijjah.
     if (13..=15).contains(&h_day) {
         types.push(FastingType::AyyamulBidh);
         if !status.is_wajib() && status < FastingStatus::Sunnah {
@@ -92,9 +95,6 @@ pub fn check(g_date: NaiveDate, adjustment: i64) -> FastingAnalysis {
     }
 
     // --- 4. Makruh Checks (Friday/Saturday) ---
-    // Only if Mubah (no other status assigned).
-    // If it's Arafah (Sunnah) on Friday, it's not Makruh.
-    // If it's Ramadhan (Wajib) on Saturday, it's not Makruh.
     if status == FastingStatus::Mubah {
         if weekday == Weekday::Fri {
             types.push(FastingType::FridayExclusive);
@@ -105,6 +105,5 @@ pub fn check(g_date: NaiveDate, adjustment: i64) -> FastingAnalysis {
         }
     }
 
-    FastingAnalysis::new(g_date, status, types)
-        .with_description(format!("Hijri Date: {} {} {}", h_day, get_hijri_month_name(h_month), h_date.year()))
+    Ok(FastingAnalysis::new(g_date, status, types, (h_date.year() as usize, h_month, h_day)))
 }
