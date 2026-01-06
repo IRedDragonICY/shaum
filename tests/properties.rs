@@ -3,11 +3,11 @@ use chrono::NaiveDate;
 use shaum::prelude::*;
 
 proptest! {
-    /// Invariant: `analyze` never panics for any date between 1900 and 2100.
+    /// Invariant: `analyze` never panics for any date between 1950 and 2050 (supported range).
     #[test]
-    fn no_panic_analyze_invariant(days in 0i32..73000) {
-        // Base date 1900-01-01
-        let base = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+    fn no_panic_analyze_invariant(days in 0i32..36500) {
+        // Base date 1950-01-01 (Safe inside 1938-2076)
+        let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
         // Should not panic
@@ -16,10 +16,8 @@ proptest! {
     
     /// Invariant: Status Hierarchy (Haram trumps all).
     #[test]
-    /// Invariant: Status Hierarchy (Haram trumps all).
-    #[test]
-    fn haram_trumps_all(days in 0i32..73000) {
-        let base = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+    fn haram_trumps_all(days in 0i32..36500) {
+        let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
         let analysis = analyze_date(date);
@@ -33,14 +31,13 @@ proptest! {
     
     /// Invariant: Ramadhan is always Wajib (unless Travel/Sick - not implemented yet, so Wajib).
     #[test]
-    fn ramadhan_is_wajib(days in 0i32..73000) {
-        let base = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+    fn ramadhan_is_wajib(days in 0i32..36500) {
+        let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
         let analysis = analyze_date(date);
         
         if analysis.has_reason(&FastingType::RAMADHAN) {
-            // Ramadhan is Wajib. Exceptions (Eid?) No, Ramadhan ends before Eid.
             assert!(analysis.primary_status.is_wajib(), "Date {:?} is Ramadhan but not Wajib: {:?}", date, analysis.primary_status);
         }
     }

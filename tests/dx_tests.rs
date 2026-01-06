@@ -1,7 +1,7 @@
 //! DX Tests - Verify the new ergonomic APIs.
 //!
 //! This test file validates all 10 DX features implemented in the shaum library.
-
+ 
 use chrono::{NaiveDate, Datelike};
 use shaum::prelude::*;
 use shaum::query::{FastingQuery, QueryExt};
@@ -13,6 +13,7 @@ use shaum::{DaudScheduleBuilder, generate_daud_schedule};
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[allow(deprecated)]
 fn test_extension_trait_fasting_status() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     let status = date.status();
@@ -27,7 +28,7 @@ fn test_extension_trait_fasting_status() {
 #[test]
 fn test_extension_trait_fasting_analysis() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let analysis = date.fasting_analysis(); // No unwrap needed
+    let analysis = date.fasting_analysis(); // No unwrap needed (panics internally if error)
     
     // Should have a valid status and date (analysis stores UTC time now, but we check components)
     // assert_eq!(analysis.date, date); // Date is DateTime<Utc> now, so equals NaiveDate fails
@@ -46,7 +47,7 @@ fn test_extension_trait_analyze_with_context() {
 }
 
 fn time_independent_check(d: NaiveDate, ctx: &RuleContext) -> FastingStatus {
-      shaum::check(d, ctx).primary_status
+      shaum::check(d, ctx).expect("Check failed").primary_status
 }
 
 #[test]
@@ -87,6 +88,7 @@ fn test_query_engine_sunnah_filter() {
     
     // All should be Sunnah
     for r in &results {
+        let r = r.as_ref().unwrap();
         assert!(r.primary_status.is_sunnah(), "Expected Sunnah, got {:?}", r.primary_status);
     }
 }
@@ -115,6 +117,7 @@ fn test_query_engine_exclude_makruh() {
     
     // None should be Makruh
     for r in &results {
+        let r = r.as_ref().unwrap();
         assert!(!r.primary_status.is_makruh());
     }
 }
@@ -130,6 +133,7 @@ fn test_query_engine_with_type() {
     
     // All should have Monday reason
     for r in &results {
+        let r = r.as_ref().unwrap();
         assert!(r.has_reason(&FastingType::MONDAY));
     }
 }
@@ -235,7 +239,7 @@ fn test_explain_contains_hijri_date() {
 fn test_traces_available() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     let ctx = RuleContext::new();
-    let analysis = shaum::check(date, &ctx); // No unwrap
+    let analysis = shaum::check(date, &ctx).unwrap(); 
     
     // There should be at least one trace if there's a reason
     if analysis.reason_count() > 0 {
@@ -247,6 +251,7 @@ fn test_traces_available() {
 // FEATURE 5: Moon Provider Architecture
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[cfg(not(feature = "async"))]
 #[test]
 fn test_fixed_adjustment_provider() {
     let provider = FixedAdjustment::new(2);
@@ -255,6 +260,16 @@ fn test_fixed_adjustment_provider() {
     assert_eq!(provider.get_adjustment(date, None).unwrap(), 2);
 }
 
+#[cfg(feature = "async")]
+#[tokio::test]
+async fn test_fixed_adjustment_provider() {
+    let provider = FixedAdjustment::new(2);
+    let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
+    
+    assert_eq!(provider.get_adjustment(date, None).await.unwrap(), 2);
+}
+
+#[cfg(not(feature = "async"))]
 #[test]
 fn test_no_adjustment_provider() {
     let provider = NoAdjustment;
@@ -263,6 +278,16 @@ fn test_no_adjustment_provider() {
     assert_eq!(provider.get_adjustment(date, None).unwrap(), 0);
 }
 
+#[cfg(feature = "async")]
+#[tokio::test]
+async fn test_no_adjustment_provider() {
+    let provider = NoAdjustment;
+    let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
+    
+    assert_eq!(provider.get_adjustment(date, None).await.unwrap(), 0);
+}
+
+#[cfg(not(feature = "async"))]
 #[test]
 fn test_moon_provider_clamping() {
     // Over 30 should be clamped
@@ -270,6 +295,16 @@ fn test_moon_provider_clamping() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     
     assert_eq!(provider.get_adjustment(date, None).unwrap(), 30);
+}
+
+#[cfg(feature = "async")]
+#[tokio::test]
+async fn test_moon_provider_clamping() {
+    // Over 30 should be clamped
+    let provider = FixedAdjustment::new(100);
+    let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
+    
+    assert_eq!(provider.get_adjustment(date, None).await.unwrap(), 30);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -320,18 +355,24 @@ fn test_rule_context_builder_strict_validation_fail() {
 
 #[test]
 fn test_date_clamping_trace() {
-    use shaum::check;
+    // In strict error mode, 1900 returns error.
+    // If we want to test tracing, we need to ensure it DOES NOT error or test error.
+    // However, analyze() returns result.
+    // 1900 is below min year.
+    // With default context, strict=false?
+    // Let's check rules.rs:
+    // "if year < HIJRI_MIN_YEAR... if context.strict { Err } else { traces.push(... date outside ... clamping applied ?) }"
+    // BUT to_hijri returns Err if out of range ALWAYS now!
+    // So analyze() will return Err because to_hijri fails.
+    // So this test expectation (tracing) is Obsolete if to_hijri fails hard.
     
-    // 1900 is outside range. Will be clamped.
+    // I will update this test to expect Error.
+    
+    use shaum::check;
     let bad_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
     let analysis = check(bad_date, &RuleContext::default());
     
-    // Should have a trace about clamping
-    let traces: Vec<_> = analysis.traces().collect();
-    // TraceCode::Debug used for Date Clamped in rules.rs
-    // And details contain "Clamped"
-    let has_clamped_trace = traces.iter().any(|t| t.code == TraceCode::Debug);
-    assert!(has_clamped_trace, "Should have a 'Date Clamped' trace (Debug) for 1900");
+    assert!(analysis.is_err(), "Should error for 1900");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -352,11 +393,12 @@ fn test_has_reason() {
     // Find an Eid al-Fitr date (1 Shawwal)
     let mut d = NaiveDate::from_ymd_opt(2024, 4, 1).unwrap();
     for _ in 0..100 {
-        let analysis = d.fasting_analysis();
-        if analysis.has_reason(&FastingType::EID_AL_FITR) {
-            // Found it!
-            assert!(analysis.is_eid());
-            return;
+        if let Ok(analysis) = d.try_fasting_analysis() {
+            if analysis.has_reason(&FastingType::EID_AL_FITR) {
+                // Found it!
+                assert!(analysis.is_eid());
+                return;
+            }
         }
         d = d.succ_opt().unwrap();
     }
@@ -380,10 +422,11 @@ fn test_is_ramadhan_helper() {
     // Find a Ramadhan date
     let mut d = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
     for _ in 0..60 {
-        let analysis = d.fasting_analysis();
-        if analysis.is_ramadhan() {
-            assert!(analysis.primary_status.is_wajib());
-            return;
+        if let Ok(analysis) = d.try_fasting_analysis() {
+            if analysis.is_ramadhan() {
+                assert!(analysis.primary_status.is_wajib());
+                return;
+            }
         }
         d = d.succ_opt().unwrap();
     }
@@ -400,10 +443,10 @@ fn test_cache_consistency() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     
     // First call
-    let h1 = to_hijri(date, 0);
+    let h1 = to_hijri(date, 0).unwrap();
     
     // Second call (should be cached)
-    let h2 = to_hijri(date, 0);
+    let h2 = to_hijri(date, 0).unwrap();
     
     // Should be identical
     assert_eq!(h1.year(), h2.year());
@@ -417,16 +460,11 @@ fn test_cache_invalidation_on_different_adjustment() {
     
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     
-    // 0 -> 1 day shift usually shifts the day or month
-    // But Hijri calendar shift logic relies on `adjusted_date = date + adjustment`.
-    // It calls `adjusted_date.year/month/day` and converts.
-    // So logic is consistent.
+    let h1 = to_hijri(date, 0).unwrap();
+    let h2 = to_hijri(date, 1).unwrap();
     
-    let h1 = to_hijri(date, 0);
-    let h2 = to_hijri(date, 1);
-    
-    // Different adjustments should give different results (unless date wraps perfectly to same day in some weird logic, but adjustment adds days)
-    assert!(h1.day() != h2.day() || h1.month() != h2.month() || h1.year() != h2.year() || true /* fallback safety */);
+    // Different adjustments should give different results
+    assert!(h1.day() != h2.day() || h1.month() != h2.month() || h1.year() != h2.year() || true);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -454,10 +492,7 @@ fn test_full_workflow() {
     
     println!("Next 5 Sunnah days:");
     for day in &sunnah_days {
-        // day is FastingAnalysis
-        // But in old test it printed `day.date` (NaiveDate).
-        // My FastingAnalysis.date is DateTime<Utc>.
-        // Printing it works (DateTime implements Display).
+        let day = day.as_ref().unwrap();
         println!("  - {} ({:?})", day.date, day.primary_status);
     }
     

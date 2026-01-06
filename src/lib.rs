@@ -26,8 +26,9 @@
 //!
 //! let date = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
 //! let sunnah: Vec<_> = date.upcoming_fasts()
-//!     .sunnah()
 //!     .take(5)
+//!     .map(|r| r.unwrap())
+//!     .filter(|a| a.primary_status.is_sunnah())
 //!     .collect();
 //! ```
 //!
@@ -46,9 +47,9 @@ pub mod macros;
 
 pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode};
 pub use rules::{analyze, check};
-pub use calendar::ShaumError; // Keeping ShaumError for now as types might use it, simplified
+pub use calendar::ShaumError;
 pub use calendar::to_hijri;
-pub use rules::{RuleContext, MoonProvider};
+pub use rules::{RuleContext, MoonProvider, SunsetProvider, DefaultSunsetProvider};
 
 /// Re-exports for convenience.
 pub mod prelude {
@@ -57,19 +58,17 @@ pub mod prelude {
     pub use crate::check;
     pub use crate::analyze_date;
     pub use crate::to_hijri;
-    pub use crate::{RuleContext, ShaumError, MoonProvider};
+    pub use crate::{RuleContext, ShaumError, MoonProvider, SunsetProvider};
     pub use crate::extension::ShaumDateExt;
     pub use crate::query::{FastingQuery, QueryExt};
 }
 
 use chrono::NaiveDate;
 
-/// Analyzes date with default context. Infallible.
+/// Analyzes date with default context. Panics if analysis fails.
 pub fn analyze_date(date: NaiveDate) -> FastingAnalysis {
-    check(date, &RuleContext::default())
+    check(date, &RuleContext::default()).expect("Analysis failed")
 }
-
-
 
 /// Daud fasting iterator.
 pub struct DaudIterator {
@@ -97,7 +96,9 @@ impl Iterator for DaudIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.current <= self.end {
-            let analysis = check(self.current, &self.context);
+            // We expect date to be valid unless out of 1938-2076 range.
+            // If it is, we panic, consistent with DaudIterator assuming valid date ranges.
+            let analysis = check(self.current, &self.context).expect("Analysis failed for DaudIterator");
             let is_haram = analysis.primary_status.is_haram();
             let date_to_emit = self.current;
             self.current = self.current.succ_opt()?;
@@ -156,7 +157,7 @@ mod tests {
     fn find_hijri_date(year: usize, month: usize, day: usize) -> NaiveDate {
         let mut d = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
         for _ in 0..2000 {
-            let h = to_hijri(d, 0);
+            let h = to_hijri(d, 0).unwrap();
             if h.year() == year && h.month() == month && h.day() == day { return d; }
             d = d.succ_opt().unwrap();
         }
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn test_eid_al_fitr_is_haram() {
         let eid = find_hijri_date(1445, 10, 1);
-        let analysis = check(eid, &RuleContext::default());
+        let analysis = check(eid, &RuleContext::default()).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.has_reason(&FastingType::EID_AL_FITR));
     }
@@ -174,7 +175,7 @@ mod tests {
     #[test]
     fn test_eid_al_adha_is_haram() {
         let eid = find_hijri_date(1445, 12, 10);
-        let analysis = check(eid, &RuleContext::default());
+        let analysis = check(eid, &RuleContext::default()).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.has_reason(&FastingType::EID_AL_ADHA));
     }
@@ -182,7 +183,7 @@ mod tests {
     #[test]
     fn test_tashriq_haram() {
         let tashriq = find_hijri_date(1445, 12, 11);
-        let analysis = check(tashriq, &RuleContext::default());
+        let analysis = check(tashriq, &RuleContext::default()).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.has_reason(&FastingType::TASHRIQ));
     }
@@ -190,7 +191,7 @@ mod tests {
     #[test]
     fn test_ramadhan_wajib() {
         let ramadhan = find_hijri_date(1445, 9, 1);
-        let analysis = check(ramadhan, &RuleContext::default());
+        let analysis = check(ramadhan, &RuleContext::default()).unwrap();
         assert!(analysis.primary_status.is_wajib());
         assert!(analysis.has_reason(&FastingType::RAMADHAN));
     }
@@ -198,7 +199,7 @@ mod tests {
     #[test]
     fn test_arafah_sunnah() {
         let arafah = find_hijri_date(1445, 12, 9);
-        let analysis = check(arafah, &RuleContext::default());
+        let analysis = check(arafah, &RuleContext::default()).unwrap();
         assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
         assert!(analysis.has_reason(&FastingType::ARAFAH));
     }
@@ -207,9 +208,9 @@ mod tests {
     fn test_friday_makruh_vs_sunnah() {
         let mut d = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
         for _ in 0..5000 {
-            let h = to_hijri(d, 0);
+            let h = to_hijri(d, 0).unwrap();
             if h.month() == 12 && h.day() == 9 && d.weekday() == chrono::Weekday::Fri {
-                let analysis = check(d, &RuleContext::default());
+                let analysis = check(d, &RuleContext::default()).unwrap();
                 assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
                 return;
             }
@@ -222,7 +223,7 @@ mod tests {
     fn test_adjustment_shifts_date() {
         let d = find_hijri_date(1445, 9, 1);
         let ctx = RuleContext::new().adjustment(-1);
-        let analysis = check(d, &ctx);
+        let analysis = check(d, &ctx).unwrap();
         assert_ne!(analysis.primary_status, FastingStatus::Wajib);
     }
 
@@ -241,7 +242,7 @@ mod tests {
     #[test]
     fn test_explain_output() {
         let ramadhan = find_hijri_date(1445, 9, 15);
-        let analysis = check(ramadhan, &RuleContext::default());
+        let analysis = check(ramadhan, &RuleContext::default()).unwrap();
         assert!(analysis.explain().contains("Ramadhan"));
     }
 

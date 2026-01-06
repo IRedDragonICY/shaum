@@ -1,8 +1,9 @@
 //! Fluent query engine for finding fasting dates.
-
+ 
 use chrono::NaiveDate;
 use crate::rules::{check, RuleContext};
 use crate::types::{FastingAnalysis, FastingType};
+use crate::calendar::ShaumError;
 
 /// Query filter mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +86,7 @@ impl FastingQuery {
 }
 
 impl Iterator for FastingQuery {
-    type Item = FastingAnalysis;
+    type Item = Result<FastingAnalysis, ShaumError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -93,10 +94,14 @@ impl Iterator for FastingQuery {
             let date = self.current;
             self.current = self.current.succ_opt()?;
 
-            // Always succeeds now
-            let analysis = check(date, &self.context);
+            // Propagate errors from check
+            let analysis = match check(date, &self.context) {
+                Ok(a) => a,
+                Err(e) => return Some(Err(e)),
+            };
+
             if self.matches(&analysis) {
-                return Some(analysis);
+                return Some(Ok(analysis));
             }
         }
     }
@@ -121,13 +126,16 @@ mod tests {
         let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
         let results: Vec<_> = FastingQuery::starting_from(start).take(5).collect();
         assert_eq!(results.len(), 5);
+        assert!(results.iter().all(|r| r.is_ok()));
     }
 
     #[test]
     fn test_sunnah_filter() {
         let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
         let results: Vec<_> = FastingQuery::starting_from(start).sunnah().take(3).collect();
-        for r in &results { assert!(r.primary_status.is_sunnah()); }
+        for r in &results { 
+            assert!(r.as_ref().unwrap().primary_status.is_sunnah()); 
+        }
     }
 
     #[test]
@@ -143,5 +151,15 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
         let results: Vec<_> = date.upcoming_fasts().take(3).collect();
         assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_error_propagation() {
+        // Year 3000 should fail
+        let start = NaiveDate::from_ymd_opt(2077, 1, 1).unwrap();
+        let mut query = FastingQuery::starting_from(start);
+        let result = query.next();
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
     }
 }

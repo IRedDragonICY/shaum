@@ -27,6 +27,23 @@ pub enum ShaumError {
     /// Analysis failure.
     #[error("Analysis failed: {0}")]
     AnalysisError(String),
+
+    /// Hijri conversion error.
+    #[error("Hijri conversion failed: {0}")]
+    HijriConversionError(String),
+
+    /// Sunset calculation error.
+    #[error("Sunset calculation failed: {0}")]
+    SunsetCalculationError(String),
+
+    /// Moon provider error.
+    #[error("Moon provider error: {0}")]
+    MoonProviderError(String),
+
+    /// Network error (async/remote operations).
+    #[cfg(feature = "async")]
+    #[error("Network error: {0}")]
+    NetworkError(String),
 }
 
 impl ShaumError {
@@ -48,19 +65,19 @@ impl ShaumError {
 }
 
 // Thread-local cache: (gregorian, adjustment) -> (hijri_year, month, day)
+// Only stores successful conversions.
 thread_local! {
     static HIJRI_CACHE: RefCell<Option<(NaiveDate, i64, usize, usize, usize)>> = const { RefCell::new(None) };
 }
 
 /// Converts Gregorian to Hijri with adjustment, clamping if out of range.
 ///
-/// This function never fails. If the date is outside the supported Hijri range (1938-2076),
-/// it is clamped to the nearest valid date (Standard Min: 1938-01-01, Max: 2076-12-31).
+/// Returns `Result<HijriDate, ShaumError>` instead of unwrapping.
 ///
 /// # Arguments
 /// * `date` - Gregorian date
 /// * `adjustment` - Day offset for moon sighting (positive = Hijri ahead)
-pub fn to_hijri(date: NaiveDate, adjustment: i64) -> HijriDate {
+pub fn to_hijri(date: NaiveDate, adjustment: i64) -> Result<HijriDate, ShaumError> {
     // Check cache
     let cached = HIJRI_CACHE.with(|cache| {
         cache.borrow().as_ref().and_then(|(d, adj, y, m, day)| {
@@ -73,41 +90,32 @@ pub fn to_hijri(date: NaiveDate, adjustment: i64) -> HijriDate {
     });
     
     if let Some((y, m, d)) = cached {
-        // Safe to unwrap here because cache is populated from valid HijriDate
-        return HijriDate::from_hijri(y, m, d).unwrap_or_else(|_| 
-             HijriDate::from_hijri(1356, 10, 29).unwrap() // Fallback literal
-        );
+        // We assume cached values are valid. If not, we have a bigger problem (memory corruption or logic bug).
+        // But since we need to return Result, we just wrap it.
+        return HijriDate::from_hijri(y, m, d).map_err(|e| ShaumError::HijriConversionError(e.to_string()));
     }
     
     let adjusted_date = date + Duration::days(adjustment);
     
-    // Clamp year
+    // Check bounds strictly.
     let year = adjusted_date.year();
-    let clamped_date = if year < HIJRI_MIN_YEAR {
-        NaiveDate::from_ymd_opt(HIJRI_MIN_YEAR, 1, 1).unwrap()
-    } else if year > HIJRI_MAX_YEAR {
-        NaiveDate::from_ymd_opt(HIJRI_MAX_YEAR, 12, 31).unwrap()
-    } else {
-        adjusted_date
-    };
+    if year < HIJRI_MIN_YEAR || year > HIJRI_MAX_YEAR {
+       return Err(ShaumError::date_out_of_range(adjusted_date));
+    }
 
-    // HijriDate::from_gr is technically fallible but largely safe within the range.
-    // If it fails for some edge case even after clamping, we fall back safely.
+    // HijriDate::from_gr is fallible.
     let hijri = HijriDate::from_gr(
-        clamped_date.year() as usize, 
-        clamped_date.month() as usize, 
-        clamped_date.day() as usize
-    ).unwrap_or_else(|_| {
-        // Extreme fallback (1 Muharram 1357 approx 1938)
-        HijriDate::from_hijri(1357, 1, 1).unwrap()
-    });
+        adjusted_date.year() as usize, 
+        adjusted_date.month() as usize, 
+        adjusted_date.day() as usize
+    ).map_err(|e| ShaumError::HijriConversionError(e.to_string()))?;
     
     // Update cache
     HIJRI_CACHE.with(|cache| {
         *cache.borrow_mut() = Some((date, adjustment, hijri.year(), hijri.month(), hijri.day()));
     });
     
-    hijri
+    Ok(hijri)
 }
 
 /// Returns Hijri month name.
@@ -136,25 +144,23 @@ mod tests {
     #[test]
     fn test_cache_hit() {
         let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-        let h1 = to_hijri(date, 0);
-        let h2 = to_hijri(date, 0);
+        let h1 = to_hijri(date, 0).unwrap();
+        let h2 = to_hijri(date, 0).unwrap();
         assert_eq!(h1.day(), h2.day());
         assert_eq!(h1.month(), h2.month());
         assert_eq!(h1.year(), h2.year());
     }
     
     #[test]
-    fn test_clamping() {
+    fn test_out_of_range() {
         // BEFORE min year
         let old_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
-        let h_old = to_hijri(old_date, 0);
-        // Should clamp to ~1356/1357 AH (around 1938)
-        assert!(h_old.year() >= 1356);
+        let err_old = to_hijri(old_date, 0);
+        assert!(err_old.is_err());
 
         // AFTER max year
         let future_date = NaiveDate::from_ymd_opt(2100, 1, 1).unwrap();
-        let h_fut = to_hijri(future_date, 0);
-        // Should clamp to ~1499/1500 AH (around 2076)
-        assert!(h_fut.year() <= 1500);
+        let err_fut = to_hijri(future_date, 0);
+        assert!(err_fut.is_err());
     }
 }

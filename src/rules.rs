@@ -56,32 +56,77 @@ impl MoonProvider for NoAdjustment {
     }
 }
 
-/// Interface for calculating sunset time.
-pub trait SunsetCalculator: std::fmt::Debug + Send + Sync {
-    /// Returns the sunset timestamp for a given date and coordinate.
-    /// If calculation fails, returns None.
-    fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Option<DateTime<Utc>>;
+/// Remote moon provider fetching adjustment from an API.
+#[cfg(feature = "async")]
+#[derive(Debug, Clone)]
+pub struct RemoteMoonProvider {
+    endpoint: String,
+    client: reqwest::Client,
 }
 
-/// Placeholder sunset calculator (assumes 18:00 Local Mean Time approx).
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SimpleSunsetCalculator;
+#[cfg(feature = "async")]
+impl RemoteMoonProvider {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            client: reqwest::Client::new(),
+        }
+    }
+}
 
-impl SunsetCalculator for SimpleSunsetCalculator {
-    fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Option<DateTime<Utc>> {
+#[cfg(feature = "async")]
+#[async_trait]
+impl MoonProvider for RemoteMoonProvider {
+    async fn get_adjustment(&self, _date: NaiveDate, _coords: Option<GeoCoordinate>) -> Result<i64, ShaumError> {
+        // Simple implementation: GET endpoint/adjustment -> returns JSON number or simple text
+        // For production, this should probably send the date as query param.
+        // Assuming API returns JSON: { "adjustment": 1 }
+        
+        #[derive(Deserialize)]
+        struct AdjustmentResponse {
+            adjustment: i64,
+        }
+
+        let resp = self.client.get(&self.endpoint)
+            .send()
+            .await
+            .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
+            
+        let data = resp.json::<AdjustmentResponse>()
+            .await
+            .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
+            
+        Ok(data.adjustment)
+    }
+}
+
+/// Interface for calculating sunset time.
+pub trait SunsetProvider: std::fmt::Debug + Send + Sync {
+    /// Returns the sunset timestamp for a given date and coordinate.
+    fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Result<DateTime<Utc>, ShaumError>;
+}
+
+/// Default sunset calculator (assumes 18:00 Local Mean Time approx).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultSunsetProvider;
+
+impl SunsetProvider for DefaultSunsetProvider {
+    fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Result<DateTime<Utc>, ShaumError> {
         // Very rough approximation: 18:00 local time.
         // longitude / 15.0 = offset in hours from UTC.
         // Local 18:00 = UTC 18:00 - offset.
         let offset_hours = coords.lng / 15.0;
         let sunset_utc_hour = 18.0 - offset_hours;
         
-        let naive_time = chrono::NaiveTime::from_hms_opt(0, 0, 0)?;
+        let naive_time = chrono::NaiveTime::from_hms_opt(0, 0, 0)
+            .ok_or_else(|| ShaumError::SunsetCalculationError("Invalid base time".to_string()))?;
         let naive_dt = chrono::NaiveDateTime::new(date, naive_time);
         
         // Add hours manually
         let seconds = (sunset_utc_hour * 3600.0) as i64;
         let dt = Utc.from_utc_datetime(&naive_dt);
         dt.checked_add_signed(Duration::seconds(seconds))
+            .ok_or_else(|| ShaumError::SunsetCalculationError("Date overflow during sunset calculation".to_string()))
     }
 }
 
@@ -92,7 +137,7 @@ pub trait CustomFastingRule: std::fmt::Debug + Send + Sync {
 }
 
 /// Rule engine configuration.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)] // Removing Deserialize because dynamic traits (SunsetProvider) are hard to deserialize without specific logic
 pub struct RuleContext {
     /// Hijri day offset. Clamped to [-30, 30].
     pub adjustment: i64,
@@ -101,6 +146,8 @@ pub struct RuleContext {
     pub strict: bool,
     #[serde(skip)]
     pub custom_rules: Vec<Box<dyn CustomFastingRule>>,
+    #[serde(skip)]
+    pub sunset_provider: Box<dyn SunsetProvider>,
 }
 
 impl Clone for RuleContext {
@@ -111,6 +158,7 @@ impl Clone for RuleContext {
             daud_strategy: self.daud_strategy,
             strict: self.strict,
             custom_rules: Vec::new(),
+            sunset_provider: Box::new(DefaultSunsetProvider), // Resetting provider on clone as we can't clone trait object easily without `dyn Clone`
         }
     }
 }
@@ -123,6 +171,7 @@ impl Default for RuleContext {
             daud_strategy: DaudStrategy::default(),
             strict: false,
             custom_rules: Vec::new(),
+            sunset_provider: Box::new(DefaultSunsetProvider),
         }
     }
 }
@@ -150,9 +199,8 @@ impl RuleContext {
         self
     }
 
-    pub fn with_moon_provider<M: MoonProvider>(mut self, provider: &M, reference_date: NaiveDate) -> Self {
-        // self.adjustment = provider.get_adjustment(reference_date); // Can't satisfy async/sync or signature easily.
-        // Dropping this method effectively as per architecture change.
+    pub fn with_sunset_provider<P: SunsetProvider + 'static>(mut self, provider: P) -> Self {
+        self.sunset_provider = Box::new(provider);
         self
     }
 }
@@ -164,6 +212,7 @@ pub struct RuleContextBuilder {
     madhab: Option<Madhab>,
     daud_strategy: Option<DaudStrategy>,
     custom_rules: Vec<Box<dyn CustomFastingRule>>,
+    sunset_provider: Option<Box<dyn SunsetProvider>>,
     strict_adjustment: bool,
     strict_mode: bool,
 }
@@ -175,6 +224,10 @@ impl RuleContextBuilder {
     pub fn madhab(mut self, madhab: Madhab) -> Self { self.madhab = Some(madhab); self }
     pub fn daud_strategy(mut self, strategy: DaudStrategy) -> Self { self.daud_strategy = Some(strategy); self }
     pub fn add_custom_rule(mut self, rule: Box<dyn CustomFastingRule>) -> Self { self.custom_rules.push(rule); self }
+    pub fn with_sunset_provider<P: SunsetProvider + 'static>(mut self, provider: P) -> Self {
+        self.sunset_provider = Some(Box::new(provider));
+        self
+    }
     
     /// Enables strict adjustment bounds [-2, 2].
     pub fn strict_adjustment(mut self, strict: bool) -> Self { self.strict_adjustment = strict; self }
@@ -195,6 +248,7 @@ impl RuleContextBuilder {
             daud_strategy: self.daud_strategy.unwrap_or_default(),
             custom_rules: self.custom_rules,
             strict: self.strict_mode,
+            sunset_provider: self.sunset_provider.unwrap_or_else(|| Box::new(DefaultSunsetProvider)),
         })
     }
 }
@@ -215,28 +269,30 @@ pub fn analyze(
     let mut effective_date = datetime.date_naive();
     
     if let Some(c) = coords {
-        let calculator = SimpleSunsetCalculator; // Could be part of context if we wanted dependency injection
-        if let Some(sunset) = calculator.get_sunset(effective_date, c) {
-            if datetime > sunset {
-                effective_date = effective_date.succ_opt().ok_or_else(|| ShaumError::date_out_of_range(effective_date))?;
-                traces.push(RuleTrace::new(TraceCode::Debug, Some("Post-Maghrib: Effective date +1".to_string())));
-            }
+        // Use provider from context
+        let sunset = context.sunset_provider.get_sunset(effective_date, c)?;
+        if datetime > sunset {
+            effective_date = effective_date.succ_opt()
+                .ok_or_else(|| ShaumError::date_out_of_range(effective_date))?;
+            traces.push(RuleTrace::new(TraceCode::Debug, Some("Post-Maghrib: Effective date +1".to_string())));
         }
     }
 
-    // 2. Strict Mode Check
+    // 2. Strict Mode Check (handled by to_hijri implicitly returning error if out of range)
+    // But we check bounds here too to be nice?
+    // Actually to_hijri will error out.
+    // If strict is OFF, we might want to handle error "gracefully" if it's purely a range issue?
+    // But the prompt says "NO PANICS: Remove unwrap... Use Result propagation".
+    // So if to_hijri fails, analyze fails.
+    
     let year = effective_date.year();
-    if year < HIJRI_MIN_YEAR || year > HIJRI_MAX_YEAR {
-        if context.strict {
-            return Err(ShaumError::date_out_of_range(effective_date));
-        }
-        traces.push(RuleTrace::new(
-            TraceCode::Debug, 
-            Some(format!("Date {} outside supported Hijri range (1938-2076). Clamping applied.", effective_date))
-        ));
+    if (year < HIJRI_MIN_YEAR || year > HIJRI_MAX_YEAR) && context.strict {
+         return Err(ShaumError::date_out_of_range(effective_date));
     }
 
-    let h_date = to_hijri(effective_date, context.adjustment);
+    // This propagates error.
+    let h_date = to_hijri(effective_date, context.adjustment)?;
+    
     let h_month = h_date.month();
     let h_day = h_date.day();
     let h_year = h_date.year() as usize;
@@ -352,17 +408,12 @@ pub fn analyze(
     Ok(FastingAnalysis::with_traces(datetime, status, types, (h_year, h_month, h_day), traces))
 }
 
-/// Helper for backwards compatibility or simple checks.
-/// Defaults to Noon UTC for the given date.
-pub fn check(g_date: NaiveDate, context: &RuleContext) -> FastingAnalysis {
+/// Checks fasting status for a given date.
+/// Defaults to Noon UTC.
+/// 
+/// Returns `Result<FastingAnalysis, ShaumError>` (Changed from infallible).
+pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis, ShaumError> {
     let dt = Utc.from_utc_datetime(&g_date.and_hms_opt(12, 0, 0).unwrap());
-    analyze(dt, context, None).unwrap_or_else(|_| {
-        // Fallback or panic depending on design. Since check didn't return Result before, we should try to return something valid or minimal.
-        // But strict mode might fail.
-        // If strict mode is on, this panics?
-        // Old `check` was infallible.
-        // We'll create a dummy 'Mubah' result if it fails.
-        FastingAnalysis::new(dt, FastingStatus::Mubah, SmallVec::new(), (1400, 1, 1))
-    })
+    analyze(dt, context, None)
 }
 
