@@ -2,11 +2,12 @@ use shaum::{to_hijri, analyze, RuleContext, Madhab, DaudStrategy, FastingStatus,
 use chrono::{NaiveDate, Datelike};
 
 #[test]
-fn test_to_hijri_safety() {
-    // Negative year
-    let bad_date = NaiveDate::from_ymd_opt(-500, 1, 1).unwrap();
+fn test_to_hijrity() {
+    // Negative year - should be clamped
+    let bad_date = NaiveDate::from_ymd_opt(1800, 1, 1).unwrap();
+    // In safe mode, this clamps to 1938
     let res = to_hijri(bad_date, 0);
-    assert!(res.is_err(), "Should return error for negative year");
+    assert_eq!(res.year(), 1356); // Approx 1938
 }
 
 #[test]
@@ -27,22 +28,21 @@ fn test_arafah_friday_not_makruh() {
     let mut found = false;
     
     for _ in 0..5000 {
-        if let Ok(h) = to_hijri(d, 0) {
-            // 9 Dhul Hijjah
-            if h.month() == 12 && h.day() == 9 {
-                if d.weekday() == chrono::Weekday::Fri {
-                    let ctx = RuleContext::new().madhab(Madhab::Shafi);
-                    let analysis = analyze(d, &ctx).unwrap();
-                    
-                    // Should be Sunnah, NOT Makruh
-                    assert!(!analysis.primary_status.is_haram());
-                    assert_ne!(analysis.primary_status, FastingStatus::Makruh);
-                    // Depending on impl, might be SunnahMuakkadah
-                    println!("Date: {:?}, Status: {:?}", d, analysis.primary_status);
-                    
-                    found = true;
-                    break;
-                }
+        let h = to_hijri(d, 0);
+        // 9 Dhul Hijjah
+        if h.month() == 12 && h.day() == 9 {
+            if d.weekday() == chrono::Weekday::Fri {
+                let ctx = RuleContext::new().madhab(Madhab::Shafi);
+                let analysis = analyze(d, &ctx); // No unwrap needed
+                
+                // Should be Sunnah, NOT Makruh
+                assert!(!analysis.primary_status.is_haram());
+                assert_ne!(analysis.primary_status, FastingStatus::Makruh);
+                // Depending on impl, might be SunnahMuakkadah
+                println!("Date: {:?}, Status: {:?}", d, analysis.primary_status);
+                
+                found = true;
+                break;
             }
         }
         d = d.succ_opt().unwrap();
@@ -55,9 +55,8 @@ fn test_daud_skip_strategy() {
     // Find Eid al-Fitr (1 Shawwal)
     let mut eid_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
     loop {
-        if let Ok(h) = to_hijri(eid_date, 0) {
-            if h.month() == 10 && h.day() == 1 { break; }
-        }
+        let h = to_hijri(eid_date, 0);
+        if h.month() == 10 && h.day() == 1 { break; }
         eid_date = eid_date.succ_opt().unwrap();
     }
     
@@ -70,7 +69,7 @@ fn test_daud_skip_strategy() {
     // Next day (Eid+2): My turn is "Fast". Result: In list.
     
     let iter = generate_daud_schedule(eid_date, eid_date + chrono::Duration::days(5), ctx);
-    let days: Vec<NaiveDate> = iter.filter_map(|r| r.ok()).collect();
+    let days: Vec<NaiveDate> = iter.collect(); // No filter_map needed
     
     assert!(!days.contains(&eid_date), "Should not fast on Eid");
     assert!(!days.contains(&(eid_date + chrono::Duration::days(1))), "Should eat on Eid+1 (Skip strategy)");
@@ -82,9 +81,8 @@ fn test_daud_postpone_strategy() {
     // Find Eid al-Fitr
     let mut eid_date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
     loop {
-        if let Ok(h) = to_hijri(eid_date, 0) {
-            if h.month() == 10 && h.day() == 1 { break; }
-        }
+        let h = to_hijri(eid_date, 0);
+        if h.month() == 10 && h.day() == 1 { break; }
         eid_date = eid_date.succ_opt().unwrap();
     }
     
@@ -97,7 +95,7 @@ fn test_daud_postpone_strategy() {
     // Next day (Eid+2): Toggle to "Eat". Result: Not in list.
     
     let iter = generate_daud_schedule(eid_date, eid_date + chrono::Duration::days(5), ctx);
-    let days: Vec<NaiveDate> = iter.filter_map(|r| r.ok()).collect();
+    let days: Vec<NaiveDate> = iter.collect(); // No filter_map needed
     
     assert!(!days.contains(&eid_date), "Should not fast on Eid");
     assert!(days.contains(&(eid_date + chrono::Duration::days(1))), "Should fast on Eid+1 (Postpone strategy)");

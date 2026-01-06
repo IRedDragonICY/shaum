@@ -1,7 +1,6 @@
 //! Fluent query engine for finding fasting dates.
 
 use chrono::NaiveDate;
-use crate::calendar::ShaumError;
 use crate::rules::{check, RuleContext};
 use crate::types::{FastingAnalysis, FastingType};
 
@@ -86,7 +85,7 @@ impl FastingQuery {
 }
 
 impl Iterator for FastingQuery {
-    type Item = Result<FastingAnalysis, ShaumError>;
+    type Item = FastingAnalysis;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -94,9 +93,10 @@ impl Iterator for FastingQuery {
             let date = self.current;
             self.current = self.current.succ_opt()?;
 
-            match check(date, &self.context) {
-                Ok(analysis) => { if self.matches(&analysis) { return Some(Ok(analysis)); } }
-                Err(e) => return Some(Err(e)),
+            // Always succeeds now
+            let analysis = check(date, &self.context);
+            if self.matches(&analysis) {
+                return Some(analysis);
             }
         }
     }
@@ -119,14 +119,14 @@ mod tests {
     #[test]
     fn test_basic_query() {
         let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
-        let results: Vec<_> = FastingQuery::starting_from(start).take(5).filter_map(|r| r.ok()).collect();
+        let results: Vec<_> = FastingQuery::starting_from(start).take(5).collect();
         assert_eq!(results.len(), 5);
     }
 
     #[test]
     fn test_sunnah_filter() {
         let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
-        let results: Vec<_> = FastingQuery::starting_from(start).sunnah().take(3).filter_map(|r| r.ok()).collect();
+        let results: Vec<_> = FastingQuery::starting_from(start).sunnah().take(3).collect();
         for r in &results { assert!(r.primary_status.is_sunnah()); }
     }
 
@@ -134,14 +134,14 @@ mod tests {
     fn test_until_bound() {
         let start = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
         let end = NaiveDate::from_ymd_opt(2024, 3, 5).unwrap();
-        let results: Vec<_> = FastingQuery::starting_from(start).until(end).filter_map(|r| r.ok()).collect();
+        let results: Vec<_> = FastingQuery::starting_from(start).until(end).collect();
         assert!(results.len() <= 5);
     }
 
     #[test]
     fn test_query_ext_trait() {
         let date = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
-        let results: Vec<_> = date.upcoming_fasts().take(3).filter_map(|r| r.ok()).collect();
+        let results: Vec<_> = date.upcoming_fasts().take(3).collect();
         assert_eq!(results.len(), 3);
     }
 }

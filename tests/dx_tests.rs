@@ -15,7 +15,7 @@ use shaum::{DaudScheduleBuilder, generate_daud_schedule};
 #[test]
 fn test_extension_trait_fasting_status() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let status = date.fasting_status();
+    let status = date.status();
     
     // Should return a valid status without panicking
     assert!(
@@ -27,7 +27,7 @@ fn test_extension_trait_fasting_status() {
 #[test]
 fn test_extension_trait_fasting_analysis() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let analysis = date.fasting_analysis().unwrap();
+    let analysis = date.fasting_analysis(); // No unwrap needed
     
     // Should have a valid status and date
     assert_eq!(analysis.date, date);
@@ -39,7 +39,7 @@ fn test_extension_trait_analyze_with_context() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     let ctx = RuleContext::new().madhab(Madhab::Hanafi);
     
-    let analysis = date.analyze_with(&ctx).unwrap();
+    let analysis = date.analyze_with(&ctx); // No unwrap needed
     assert_eq!(analysis.date, date);
 }
 
@@ -50,7 +50,7 @@ fn test_extension_trait_boolean_methods() {
     assert!(monday.weekday() == chrono::Weekday::Mon);
     
     // Monday should be Sunnah (unless overridden by higher priority)
-    let analysis = monday.fasting_analysis().unwrap();
+    let analysis = monday.fasting_analysis(); // No unwrap needed
     // At minimum, it should have Monday as a reason
     assert!(analysis.has_reason(FastingType::Monday));
 }
@@ -65,7 +65,6 @@ fn test_query_engine_basic() {
     
     let results: Vec<_> = FastingQuery::starting_from(start)
         .take(5)
-        .filter_map(|r| r.ok())
         .collect();
     
     assert_eq!(results.len(), 5);
@@ -78,7 +77,6 @@ fn test_query_engine_sunnah_filter() {
     let results: Vec<_> = FastingQuery::starting_from(start)
         .sunnah()
         .take(5)
-        .filter_map(|r| r.ok())
         .collect();
     
     // All should be Sunnah
@@ -94,7 +92,6 @@ fn test_query_engine_until_bound() {
     
     let results: Vec<_> = FastingQuery::starting_from(start)
         .until(end)
-        .filter_map(|r| r.ok())
         .collect();
     
     // Should be at most 7 days
@@ -108,7 +105,6 @@ fn test_query_engine_exclude_makruh() {
     let results: Vec<_> = FastingQuery::starting_from(start)
         .exclude_makruh()
         .take(10)
-        .filter_map(|r| r.ok())
         .collect();
     
     // None should be Makruh
@@ -124,7 +120,6 @@ fn test_query_engine_with_type() {
     let results: Vec<_> = FastingQuery::starting_from(start)
         .with_type(FastingType::Monday)
         .take(4)
-        .filter_map(|r| r.ok())
         .collect();
     
     // All should have Monday reason
@@ -140,7 +135,6 @@ fn test_query_ext_trait() {
     let results: Vec<_> = date.upcoming_fasts()
         .sunnah()
         .take(3)
-        .filter_map(|r| r.ok())
         .collect();
     
     assert_eq!(results.len(), 3);
@@ -160,7 +154,7 @@ fn test_daud_schedule_builder() {
         .skip_haram_days()
         .build();
     
-    let days: Vec<_> = schedule.filter_map(|r| r.ok()).collect();
+    let days: Vec<_> = schedule.collect();
     
     // Should have some fasting days
     assert!(!days.is_empty());
@@ -182,7 +176,7 @@ fn test_daud_schedule_postpone_strategy() {
         .postpone_on_haram()
         .build();
     
-    let days: Vec<_> = schedule.filter_map(|r| r.ok()).collect();
+    let days: Vec<_> = schedule.collect();
     assert!(!days.is_empty());
 }
 
@@ -194,14 +188,12 @@ fn test_daud_never_yields_haram() {
     let ctx = RuleContext::new();
     let schedule = generate_daud_schedule(start, end, ctx);
     
-    for result in schedule {
-        if let Ok(date) = result {
-            let analysis = date.fasting_analysis().unwrap();
-            assert!(
-                !analysis.primary_status.is_haram(),
-                "Daud should never yield a Haram day: {}", date
-            );
-        }
+    for date in schedule {
+        let analysis = date.fasting_analysis(); // No unwrap
+        assert!(
+            !analysis.primary_status.is_haram(),
+            "Daud should never yield a Haram day: {}", date
+        );
     }
 }
 
@@ -212,7 +204,7 @@ fn test_daud_never_yields_haram() {
 #[test]
 fn test_explain_returns_string() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let analysis = date.fasting_analysis().unwrap();
+    let analysis = date.fasting_analysis(); // No unwrap
     
     let explanation = analysis.explain();
     assert!(!explanation.is_empty());
@@ -221,7 +213,7 @@ fn test_explain_returns_string() {
 #[test]
 fn test_explain_contains_hijri_date() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let analysis = date.fasting_analysis().unwrap();
+    let analysis = date.fasting_analysis(); // No unwrap
     
     let explanation = analysis.explain();
     // Should contain some Hijri date info
@@ -237,7 +229,7 @@ fn test_explain_contains_hijri_date() {
 fn test_traces_available() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     let ctx = RuleContext::new();
-    let analysis = analyze(date, &ctx).unwrap();
+    let analysis = analyze(date, &ctx); // No unwrap
     
     // There should be at least one trace if there's a reason
     if analysis.reason_count() > 0 {
@@ -317,33 +309,21 @@ fn test_rule_context_builder_strict_validation_fail() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FEATURE 7: Error Handling Overhaul
+// FEATURE 7: Error Handling Overhaul (Now Testing Safety)
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_date_out_of_range_error() {
-    use shaum::to_hijri;
+fn test_date_clamping_trace() {
+    use shaum::analyze;
     
+    // 1900 is outside range. Will be clamped.
     let bad_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
-    let result = to_hijri(bad_date, 0);
+    let analysis = analyze(bad_date, &RuleContext::default());
     
-    assert!(matches!(result, Err(ShaumError::DateOutOfRange { .. })));
-}
-
-#[test]
-fn test_error_contains_bounds() {
-    use shaum::to_hijri;
-    
-    let bad_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
-    let result = to_hijri(bad_date, 0);
-    
-    if let Err(ShaumError::DateOutOfRange { date, min, max }) = result {
-        assert_eq!(date, bad_date);
-        assert!(min.year() >= 1938);
-        assert!(max.year() <= 2076);
-    } else {
-        panic!("Expected DateOutOfRange error");
-    }
+    // Should have a trace about clamping
+    let traces: Vec<_> = analysis.traces().collect();
+    let has_clamped_trace = traces.iter().any(|t| t.rule == "Date Clamped");
+    assert!(has_clamped_trace, "Should have a 'Date Clamped' trace for 1900");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -353,7 +333,7 @@ fn test_error_contains_bounds() {
 #[test]
 fn test_reasons_iterator() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
-    let analysis = date.fasting_analysis().unwrap();
+    let analysis = date.fasting_analysis();
     
     // Should be able to iterate over reasons
     let _count = analysis.reasons().count();
@@ -364,7 +344,7 @@ fn test_has_reason() {
     // Find an Eid al-Fitr date (1 Shawwal)
     let mut d = NaiveDate::from_ymd_opt(2024, 4, 1).unwrap();
     for _ in 0..100 {
-        let analysis = d.fasting_analysis().unwrap();
+        let analysis = d.fasting_analysis();
         if analysis.has_reason(FastingType::EidAlFitr) {
             // Found it!
             assert!(analysis.is_eid());
@@ -380,7 +360,7 @@ fn test_convenience_helpers() {
     let date = NaiveDate::from_ymd_opt(2024, 11, 11).unwrap();
     assert!(date.weekday() == chrono::Weekday::Mon);
     
-    let analysis = date.fasting_analysis().unwrap();
+    let analysis = date.fasting_analysis();
     
     // Should have the has_reason method working
     let has_monday = analysis.has_reason(FastingType::Monday);
@@ -392,7 +372,7 @@ fn test_is_ramadhan_helper() {
     // Find a Ramadhan date
     let mut d = NaiveDate::from_ymd_opt(2024, 3, 1).unwrap();
     for _ in 0..60 {
-        let analysis = d.fasting_analysis().unwrap();
+        let analysis = d.fasting_analysis();
         if analysis.is_ramadhan() {
             assert!(analysis.primary_status.is_wajib());
             return;
@@ -412,10 +392,10 @@ fn test_cache_consistency() {
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     
     // First call
-    let h1 = to_hijri(date, 0).unwrap();
+    let h1 = to_hijri(date, 0);
     
     // Second call (should be cached)
-    let h2 = to_hijri(date, 0).unwrap();
+    let h2 = to_hijri(date, 0);
     
     // Should be identical
     assert_eq!(h1.year(), h2.year());
@@ -429,8 +409,8 @@ fn test_cache_invalidation_on_different_adjustment() {
     
     let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
     
-    let h1 = to_hijri(date, 0).unwrap();
-    let h2 = to_hijri(date, 1).unwrap();
+    let h1 = to_hijri(date, 0);
+    let h2 = to_hijri(date, 1);
     
     // Different adjustments should give different results
     // (at least the effective hijri date should differ)
@@ -448,18 +428,17 @@ fn test_full_workflow() {
     let today = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
     
     // 1. Quick check using extension trait
-    let status = today.fasting_status();
+    let status = today.status();
     println!("Today's status: {:?}", status);
     
     // 2. Get full analysis
-    let analysis = today.fasting_analysis().unwrap();
+    let analysis = today.fasting_analysis();
     println!("Explanation: {}", analysis.explain());
     
     // 3. Find next 5 Sunnah days
     let sunnah_days: Vec<_> = today.upcoming_fasts()
         .sunnah()
         .take(5)
-        .filter_map(|r| r.ok())
         .collect();
     
     println!("Next 5 Sunnah days:");
@@ -473,7 +452,6 @@ fn test_full_workflow() {
         .until(end)
         .skip_haram_days()
         .build()
-        .filter_map(|r| r.ok())
         .collect();
     
     println!("Daud schedule for June: {} days", daud.len());

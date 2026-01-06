@@ -134,15 +134,15 @@ pub struct FastingAnalysis {
     pub hijri_year: usize,
     pub hijri_month: usize,
     pub hijri_day: usize,
-    reasons: SmallVec<[FastingType; 4]>,
-    traces: SmallVec<[RuleTrace; 4]>,
+    reasons: SmallVec<[FastingType; 2]>,
+    traces: SmallVec<[RuleTrace; 2]>,
 }
 
 impl FastingAnalysis {
     pub fn new(
         date: chrono::NaiveDate,
         status: FastingStatus,
-        types: SmallVec<[FastingType; 4]>,
+        types: SmallVec<[FastingType; 2]>,
         hijri: (usize, usize, usize),
     ) -> Self {
         Self {
@@ -159,9 +159,9 @@ impl FastingAnalysis {
     pub fn with_traces(
         date: chrono::NaiveDate,
         status: FastingStatus,
-        types: SmallVec<[FastingType; 4]>,
+        types: SmallVec<[FastingType; 2]>,
         hijri: (usize, usize, usize),
-        traces: SmallVec<[RuleTrace; 4]>,
+        traces: SmallVec<[RuleTrace; 2]>,
     ) -> Self {
         Self {
             date,
@@ -240,7 +240,7 @@ impl FastingAnalysis {
 
     /// **Deprecated**: Use `reasons()` instead.
     #[deprecated(since = "0.2.0", note = "Use `reasons()` instead")]
-    pub fn types(&self) -> &SmallVec<[FastingType; 4]> { &self.reasons }
+    pub fn types(&self) -> &SmallVec<[FastingType; 2]> { &self.reasons }
 }
 
 impl fmt::Display for FastingAnalysis {

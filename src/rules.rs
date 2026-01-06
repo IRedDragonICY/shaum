@@ -1,5 +1,5 @@
 use chrono::{Datelike, NaiveDate, Weekday};
-use crate::calendar::{to_hijri, ShaumError};
+use crate::calendar::ShaumError;
 use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy, RuleTrace};
 use crate::constants::*;
 use serde::{Serialize, Deserialize};
@@ -138,35 +138,46 @@ impl RuleContextBuilder {
     }
 }
 
-/// Analyzes fasting status for a date.
-pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis, ShaumError> {
-    let h_date = to_hijri(g_date, context.adjustment)?;
+/// Analyzes fasting status for a date. 
+/// Infallible - always returns an analysis, potentially with "Safe Clamped" warnings in traces.
+pub fn check(g_date: NaiveDate, context: &RuleContext) -> FastingAnalysis {
+    let mut traces: SmallVec<[RuleTrace; 2]> = SmallVec::new();
+    
+    // Detect potential clamping for traceability
+    let year = g_date.year();
+    if year < crate::calendar::HIJRI_MIN_YEAR || year > crate::calendar::HIJRI_MAX_YEAR {
+        traces.push(RuleTrace::new(
+            "Date Clamped", 
+            format!("Date {} outside supported Hijri range (1938-2076). Used nearest valid equivalent.", g_date)
+        ));
+    }
+
+    let h_date = crate::calendar::to_hijri(g_date, context.adjustment);
     let h_month = h_date.month();
     let h_day = h_date.day();
     let h_year = h_date.year() as usize;
     let weekday = g_date.weekday();
 
-    let mut types: SmallVec<[FastingType; 4]> = SmallVec::new();
-    let mut traces: SmallVec<[RuleTrace; 4]> = SmallVec::new();
+    let mut types: SmallVec<[FastingType; 2]> = SmallVec::new();
     let mut status = FastingStatus::Mubah;
 
     // Haram checks
     if h_month == MONTH_SHAWWAL && h_day == 1 {
         types.push(FastingType::EidAlFitr);
         traces.push(RuleTrace::new("Eid al-Fitr", format!("1 Shawwal {}", h_year)));
-        return Ok(FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
+        return FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces);
     }
 
     if h_month == MONTH_DHUL_HIJJAH && h_day == 10 {
         types.push(FastingType::EidAlAdha);
         traces.push(RuleTrace::new("Eid al-Adha", format!("10 Dhul Hijjah {}", h_year)));
-        return Ok(FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
+        return FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces);
     }
 
     if h_month == MONTH_DHUL_HIJJAH && (11..=13).contains(&h_day) {
         types.push(FastingType::Tashriq);
         traces.push(RuleTrace::new("Tashriq", format!("{} Dhul Hijjah {}", h_day, h_year)));
-        return Ok(FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
+        return FastingAnalysis::with_traces(g_date, FastingStatus::Haram, types, (h_year, h_month, h_day), traces);
     }
 
     // Wajib
@@ -253,5 +264,5 @@ pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis
         }
     }
 
-    Ok(FastingAnalysis::with_traces(g_date, status, types, (h_year, h_month, h_day), traces))
+    FastingAnalysis::with_traces(g_date, status, types, (h_year, h_month, h_day), traces)
 }
