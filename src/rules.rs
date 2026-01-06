@@ -1,6 +1,6 @@
 use chrono::{Datelike, NaiveDate, Weekday, DateTime, Utc, TimeZone, Duration};
 use crate::calendar::{ShaumError, to_hijri, HIJRI_MIN_YEAR, HIJRI_MAX_YEAR};
-use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy, RuleTrace, TraceCode, GeoCoordinate};
+use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy, RuleTrace, TraceCode, GeoCoordinate, VisibilityCriteria};
 use crate::constants::*;
 use serde::{Serialize, Deserialize};
 use smallvec::SmallVec;
@@ -106,27 +106,14 @@ pub trait SunsetProvider: std::fmt::Debug + Send + Sync {
     fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Result<DateTime<Utc>, ShaumError>;
 }
 
-/// Default sunset calculator (assumes 18:00 Local Mean Time approx).
+/// Default sunset calculator using VSOP87 astronomy engine.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultSunsetProvider;
 
 impl SunsetProvider for DefaultSunsetProvider {
     fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Result<DateTime<Utc>, ShaumError> {
-        // Very rough approximation: 18:00 local time.
-        // longitude / 15.0 = offset in hours from UTC.
-        // Local 18:00 = UTC 18:00 - offset.
-        let offset_hours = coords.lng / 15.0;
-        let sunset_utc_hour = 18.0 - offset_hours;
-        
-        let naive_time = chrono::NaiveTime::from_hms_opt(0, 0, 0)
-            .ok_or_else(|| ShaumError::SunsetCalculationError("Invalid base time".to_string()))?;
-        let naive_dt = chrono::NaiveDateTime::new(date, naive_time);
-        
-        // Add hours manually
-        let seconds = (sunset_utc_hour * 3600.0) as i64;
-        let dt = Utc.from_utc_datetime(&naive_dt);
-        dt.checked_add_signed(Duration::seconds(seconds))
-            .ok_or_else(|| ShaumError::SunsetCalculationError("Date overflow during sunset calculation".to_string()))
+        // Use the astronomy engine for accurate sunset calculation
+        Ok(crate::astronomy::visibility::estimate_sunset(date, coords))
     }
 }
 
@@ -144,6 +131,8 @@ pub struct RuleContext {
     pub madhab: Madhab,
     pub daud_strategy: DaudStrategy,
     pub strict: bool,
+    /// Moon visibility criteria for hilal observation.
+    pub visibility_criteria: VisibilityCriteria,
     #[serde(skip)]
     pub custom_rules: Vec<Box<dyn CustomFastingRule>>,
     #[serde(skip)]
@@ -157,6 +146,7 @@ impl Clone for RuleContext {
             madhab: self.madhab,
             daud_strategy: self.daud_strategy,
             strict: self.strict,
+            visibility_criteria: self.visibility_criteria,
             custom_rules: Vec::new(),
             sunset_provider: Box::new(DefaultSunsetProvider), // Resetting provider on clone as we can't clone trait object easily without `dyn Clone`
         }
@@ -170,6 +160,7 @@ impl Default for RuleContext {
             madhab: Madhab::default(),
             daud_strategy: DaudStrategy::default(),
             strict: false,
+            visibility_criteria: VisibilityCriteria::default(),
             custom_rules: Vec::new(),
             sunset_provider: Box::new(DefaultSunsetProvider),
         }
@@ -203,6 +194,12 @@ impl RuleContext {
         self.sunset_provider = Box::new(provider);
         self
     }
+
+    /// Sets moon visibility criteria.
+    pub fn visibility_criteria(mut self, criteria: VisibilityCriteria) -> Self {
+        self.visibility_criteria = criteria;
+        self
+    }
 }
 
 /// Builder with validation for `RuleContext`.
@@ -213,6 +210,7 @@ pub struct RuleContextBuilder {
     daud_strategy: Option<DaudStrategy>,
     custom_rules: Vec<Box<dyn CustomFastingRule>>,
     sunset_provider: Option<Box<dyn SunsetProvider>>,
+    visibility_criteria: Option<VisibilityCriteria>,
     strict_adjustment: bool,
     strict_mode: bool,
 }
@@ -232,6 +230,12 @@ impl RuleContextBuilder {
     /// Enables strict adjustment bounds [-2, 2].
     pub fn strict_adjustment(mut self, strict: bool) -> Self { self.strict_adjustment = strict; self }
 
+    /// Sets moon visibility criteria.
+    pub fn visibility_criteria(mut self, criteria: VisibilityCriteria) -> Self { 
+        self.visibility_criteria = Some(criteria); 
+        self 
+    }
+
     /// Builds and validates.
     pub fn build(self) -> Result<RuleContext, ShaumError> {
         let adjustment = self.adjustment.unwrap_or(0);
@@ -248,6 +252,7 @@ impl RuleContextBuilder {
             daud_strategy: self.daud_strategy.unwrap_or_default(),
             custom_rules: self.custom_rules,
             strict: self.strict_mode,
+            visibility_criteria: self.visibility_criteria.unwrap_or_default(),
             sunset_provider: self.sunset_provider.unwrap_or_else(|| Box::new(DefaultSunsetProvider)),
         })
     }

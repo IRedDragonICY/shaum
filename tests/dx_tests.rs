@@ -164,7 +164,7 @@ fn test_daud_schedule_builder() {
         .skip_haram_days()
         .build();
     
-    let days: Vec<_> = schedule.collect();
+    let days: Vec<_> = schedule.filter_map(|r| r.ok()).collect();
     
     // Should have some fasting days
     assert!(!days.is_empty());
@@ -186,7 +186,7 @@ fn test_daud_schedule_postpone_strategy() {
         .postpone_on_haram()
         .build();
     
-    let days: Vec<_> = schedule.collect();
+    let days: Vec<_> = schedule.filter_map(|r| r.ok()).collect();
     assert!(!days.is_empty());
 }
 
@@ -198,8 +198,9 @@ fn test_daud_never_yields_haram() {
     let ctx = RuleContext::new();
     let schedule = generate_daud_schedule(start, end, ctx);
     
-    for date in schedule {
-        let analysis = shaum::analyze_date(date); // wrapper
+    for date_result in schedule {
+        let date = date_result.expect("Iterator should not error");
+        let analysis = shaum::analyze_date(date).expect("Analysis failed");
         assert!(
             !analysis.primary_status.is_haram(),
             "Daud should never yield a Haram day: {}", date
@@ -502,6 +503,7 @@ fn test_full_workflow() {
         .until(end)
         .skip_haram_days()
         .build()
+        .filter_map(|r| r.ok())
         .collect();
     
     println!("Daud schedule for June: {} days", daud.len());

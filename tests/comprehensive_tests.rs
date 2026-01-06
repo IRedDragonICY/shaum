@@ -79,7 +79,7 @@ fn test_daud_skip_strategy() {
     // Next day (Eid+2): My turn is "Fast". Result: In list.
     
     let iter = generate_daud_schedule(eid_date, eid_date + chrono::Duration::days(5), ctx);
-    let days: Vec<NaiveDate> = iter.collect(); // No filter_map needed
+    let days: Vec<NaiveDate> = iter.filter_map(|r| r.ok()).collect();
     
     assert!(!days.contains(&eid_date), "Should not fast on Eid");
     assert!(!days.contains(&(eid_date + chrono::Duration::days(1))), "Should eat on Eid+1 (Skip strategy)");
@@ -106,7 +106,7 @@ fn test_daud_postpone_strategy() {
     // Next day (Eid+2): Toggle to "Eat". Result: Not in list.
     
     let iter = generate_daud_schedule(eid_date, eid_date + chrono::Duration::days(5), ctx);
-    let days: Vec<NaiveDate> = iter.collect(); // No filter_map needed
+    let days: Vec<NaiveDate> = iter.filter_map(|r| r.ok()).collect();
     
     assert!(!days.contains(&eid_date), "Should not fast on Eid");
     assert!(days.contains(&(eid_date + chrono::Duration::days(1))), "Should fast on Eid+1 (Postpone strategy)");

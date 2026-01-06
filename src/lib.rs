@@ -46,7 +46,10 @@ pub mod query;
 pub mod macros;
 pub mod astronomy;
 
-pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode};
+#[cfg(feature = "async")]
+pub mod network;
+
+pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode, VisibilityCriteria, PrayerParams};
 pub use rules::{analyze, check};
 pub use calendar::ShaumError;
 pub use calendar::to_hijri;
@@ -66,23 +69,32 @@ pub mod prelude {
 
 use chrono::NaiveDate;
 
-/// Analyzes date with default context. Panics if analysis fails.
-pub fn analyze_date(date: NaiveDate) -> FastingAnalysis {
+/// Analyzes date with default context. Returns Result for safe error handling.
+pub fn analyze_date(date: NaiveDate) -> Result<FastingAnalysis, ShaumError> {
+    check(date, &RuleContext::default())
+}
+
+/// **Deprecated**: Panicking version of analyze_date. Use `analyze_date()` instead.
+#[deprecated(since = "0.5.0", note = "Use analyze_date() which returns Result")]
+pub fn analyze_date_unchecked(date: NaiveDate) -> FastingAnalysis {
     check(date, &RuleContext::default()).expect("Analysis failed")
 }
 
 /// Daud fasting iterator.
+///
+/// Yields `Result<NaiveDate, ShaumError>` to handle potential errors gracefully.
 pub struct DaudIterator {
     current: NaiveDate,
     end: NaiveDate,
     should_fast: bool,
     context: RuleContext,
     debt: u32,
+    errored: bool,
 }
 
 impl DaudIterator {
     pub fn new(start: NaiveDate, end: NaiveDate, context: RuleContext) -> Self {
-        Self { current: start, end, should_fast: true, context, debt: 0 }
+        Self { current: start, end, should_fast: true, context, debt: 0, errored: false }
     }
 
     pub fn starting_from(date: NaiveDate) -> DaudScheduleBuilder {
@@ -93,16 +105,31 @@ impl DaudIterator {
 }
 
 impl Iterator for DaudIterator {
-    type Item = NaiveDate;
+    type Item = Result<NaiveDate, ShaumError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // Stop iteration if we previously encountered an error
+        if self.errored {
+            return None;
+        }
+
         while self.current <= self.end {
-            // We expect date to be valid unless out of 1938-2076 range.
-            // If it is, we panic, consistent with DaudIterator assuming valid date ranges.
-            let analysis = check(self.current, &self.context).expect("Analysis failed for DaudIterator");
+            let analysis = match check(self.current, &self.context) {
+                Ok(a) => a,
+                Err(e) => {
+                    self.errored = true;
+                    return Some(Err(e));
+                }
+            };
             let is_haram = analysis.primary_status.is_haram();
             let date_to_emit = self.current;
-            self.current = self.current.succ_opt()?;
+            self.current = match self.current.succ_opt() {
+                Some(d) => d,
+                None => {
+                    self.errored = true;
+                    return Some(Err(ShaumError::date_out_of_range(self.current)));
+                }
+            };
 
             if is_haram {
                 match self.context.daud_strategy {
@@ -112,7 +139,7 @@ impl Iterator for DaudIterator {
                 continue;
             } else if self.should_fast {
                 self.should_fast = !self.should_fast;
-                return Some(date_to_emit);
+                return Some(Ok(date_to_emit));
             } else {
                 self.should_fast = !self.should_fast;
                 continue;
@@ -233,6 +260,7 @@ mod tests {
         let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
         let end = start + chrono::Duration::days(10);
         let schedule: Vec<NaiveDate> = generate_daud_schedule(start, end, RuleContext::default())
+            .filter_map(|r| r.ok())
             .collect();
         assert!(!schedule.is_empty());
         for w in schedule.windows(2) {
@@ -252,6 +280,7 @@ mod tests {
         let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
         let end = NaiveDate::from_ymd_opt(2025, 1, 10).unwrap();
         let days: Vec<_> = DaudScheduleBuilder::new(start).until(end).skip_haram_days().build()
+            .filter_map(|r| r.ok())
             .collect();
         assert!(!days.is_empty());
     }

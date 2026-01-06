@@ -16,6 +16,86 @@ impl GeoCoordinate {
     }
 }
 
+/// Configurable moon visibility criteria for hilal observation.
+///
+/// Controls the thresholds used when determining if the crescent moon
+/// is visible. Default values match MABIMS (Indonesia/Malaysia/Brunei/Singapore).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct VisibilityCriteria {
+    /// Minimum moon altitude above horizon (degrees). Default: 3.0
+    pub min_altitude: f64,
+    /// Minimum elongation between sun and moon (degrees). Default: 6.4
+    pub min_elongation: f64,
+}
+
+impl Default for VisibilityCriteria {
+    fn default() -> Self {
+        Self {
+            min_altitude: 3.0,
+            min_elongation: 6.4,
+        }
+    }
+}
+
+impl VisibilityCriteria {
+    /// Creates new visibility criteria with custom thresholds.
+    pub fn new(min_altitude: f64, min_elongation: f64) -> Self {
+        Self { min_altitude, min_elongation }
+    }
+
+    /// MABIMS criteria (default for Southeast Asia).
+    pub fn mabims() -> Self {
+        Self::default()
+    }
+
+    /// Istanbul 1978 criteria (more conservative).
+    pub fn istanbul_1978() -> Self {
+        Self { min_altitude: 5.0, min_elongation: 8.0 }
+    }
+}
+
+/// Prayer time calculation parameters.
+///
+/// Controls angles and buffers used for prayer time calculations.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PrayerParams {
+    /// Sun altitude angle for Fajr (degrees below horizon). Default: -20.0 (MABIMS/Indonesia)
+    pub fajr_angle: f64,
+    /// Minutes to subtract from Fajr for Imsak. Default: 10
+    pub imsak_buffer_minutes: i64,
+}
+
+impl Default for PrayerParams {
+    fn default() -> Self {
+        Self {
+            fajr_angle: -20.0,
+            imsak_buffer_minutes: 10,
+        }
+    }
+}
+
+impl PrayerParams {
+    /// Creates new prayer parameters.
+    pub fn new(fajr_angle: f64, imsak_buffer_minutes: i64) -> Self {
+        Self { fajr_angle, imsak_buffer_minutes }
+    }
+
+    /// MABIMS/Indonesia standard (-20°, 10 min).
+    pub fn mabims() -> Self {
+        Self::default()
+    }
+
+    /// Egyptian General Authority (-19.5°, 10 min).
+    pub fn egyptian() -> Self {
+        Self { fajr_angle: -19.5, imsak_buffer_minutes: 10 }
+    }
+
+    /// Muslim World League (-18°, 10 min).
+    pub fn mwl() -> Self {
+        Self { fajr_angle: -18.0, imsak_buffer_minutes: 10 }
+    }
+}
+
 /// Fasting status (Hukum). Ordered by priority: Haram > Wajib > SunnahMuakkadah > Sunnah > Makruh > Mubah.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FastingStatus {

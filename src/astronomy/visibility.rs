@@ -6,14 +6,10 @@
 //! Reference: Various Islamic astronomy sources, MABIMS criteria documentation.
 
 use crate::astronomy::{vsop87, elp2000, coords};
-use crate::types::GeoCoordinate;
+use crate::types::{GeoCoordinate, VisibilityCriteria};
 use chrono::{DateTime, Utc, Duration, Datelike, Timelike, TimeZone};
 
-/// MABIMS Visibility Criteria (Indonesian/Malaysian/Brunei/Singapore).
-/// - Moon altitude >= 3 degrees
-/// - Elongation >= 6.4 degrees
-pub const MABIMS_MIN_ALTITUDE: f64 = 3.0;
-pub const MABIMS_MIN_ELONGATION: f64 = 6.4;
+
 
 /// Report containing all visibility metrics for hilal observation.
 #[derive(Debug, Clone)]
@@ -163,9 +159,15 @@ fn calculate_elongation(sun_lon: f64, sun_lat: f64, moon_lon: f64, moon_lat: f64
 /// Calculates the visibility report for the Moon at a specific datetime and location.
 ///
 /// This is the main entry point for hilal visibility determination.
+///
+/// # Arguments
+/// * `datetime` - Observation datetime in UTC
+/// * `coords` - Observer's geographic coordinates
+/// * `criteria` - Visibility criteria thresholds (altitude, elongation)
 pub fn calculate_visibility(
     datetime: DateTime<Utc>,
     coords: GeoCoordinate,
+    criteria: &VisibilityCriteria,
 ) -> MoonVisibilityReport {
     let date = datetime.date_naive();
     
@@ -212,8 +214,8 @@ pub fn calculate_visibility(
     let alt_diff = moon_alt - sun_alt;
     let lag_time_minutes = alt_diff * 4.0; // Rough estimate: 4 min per degree
     
-    // 10. Check MABIMS criteria
-    let meets_mabims = moon_alt >= MABIMS_MIN_ALTITUDE && elongation >= MABIMS_MIN_ELONGATION;
+    // 10. Check criteria
+    let meets_mabims = moon_alt >= criteria.min_altitude && elongation >= criteria.min_elongation;
     
     MoonVisibilityReport {
         moon_altitude: moon_alt,
