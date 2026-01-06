@@ -498,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "shaum"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "criterion",

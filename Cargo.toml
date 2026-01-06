@@ -1,6 +1,6 @@
 [package]
 name = "shaum"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 authors = ["Mohammad Farid Hendianto (IRedDragonICY)"]
 description = "A Fiqh-compliant engine for determining Islamic fasting (Shaum) status. accurately identifies Wajib, Sunnah, Makruh, and Haram fasting days based on Hijri calendar rules."
