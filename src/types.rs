@@ -2,6 +2,8 @@
 
 
 use serde::{Serialize, Deserialize};
+use smallvec::SmallVec;
+use std::fmt;
 
 /// The legal status (Hukum) of fasting on a specific day.
 /// 
@@ -35,25 +37,83 @@ impl FastingStatus {
     pub fn is_sunnah(&self) -> bool {
         matches!(self, FastingStatus::Sunnah | FastingStatus::SunnahMuakkadah)
     }
+
+    pub fn is_makruh(&self) -> bool {
+        matches!(self, FastingStatus::Makruh)
+    }
+
+    pub fn is_mubah(&self) -> bool {
+        matches!(self, FastingStatus::Mubah)
+    }
+}
+
+impl fmt::Display for FastingStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            FastingStatus::Mubah => "Mubah (Permissible)",
+            FastingStatus::Makruh => "Makruh (Disliked)",
+            FastingStatus::Sunnah => "Sunnah (Recommended)",
+            FastingStatus::SunnahMuakkadah => "Sunnah Muakkadah (Highly Recommended)",
+            FastingStatus::Wajib => "Wajib (Obligatory)",
+            FastingStatus::Haram => "Haram (Forbidden)",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 /// The specific reason or type of fasting associated with a day.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FastingType {
+    /// The obligatory fasting during the month of Ramadhan.
     Ramadhan,
+    /// The recommended fast on the Day of Arafah (9th Dhu al-Hijjah).
     Arafah,
+    /// The recommended fast on the Day of Tasu'a (9th Muharram).
     Tasua,
+    /// The recommended fast on the Day of Ashura (10th Muharram).
     Ashura,
+    /// The "White Days" (13th, 14th, 15th of every Hijri month).
     AyyamulBidh,
+    /// Sunnah fast on Mondays.
     Monday,
+    /// Sunnah fast on Thursdays.
     Thursday,
+    /// Six days of Sunnah fast in the month of Shawwal.
     Shawwal,
+    /// Fasting every other day, as practiced by Prophet Daud (A.S).
     Daud,
+    /// Forbidden fast on the day of Eid al-Fitr.
     EidAlFitr,
+    /// Forbidden fast on the day of Eid al-Adha.
     EidAlAdha,
+    /// Forbidden fast during the three days following Eid al-Adha.
     Tashriq,
+    /// Disliked to fast on Friday alone without a specific reason/joining.
     FridayExclusive,
+    /// Disliked to fast on Saturday alone without a specific reason/joining.
     SaturdayExclusive,
+}
+
+impl fmt::Display for FastingType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            FastingType::Ramadhan => "Ramadhan",
+            FastingType::Arafah => "Day of Arafah",
+            FastingType::Tasua => "Tasu'a (9th Muharram)",
+            FastingType::Ashura => "Ashura (10th Muharram)",
+            FastingType::AyyamulBidh => "Ayyamul Bidh (13th, 14th, 15th)",
+            FastingType::Monday => "Monday",
+            FastingType::Thursday => "Thursday",
+            FastingType::Shawwal => "Six Days of Shawwal",
+            FastingType::Daud => "Fasting of Prophet Daud (A.S)",
+            FastingType::EidAlFitr => "Eid al-Fitr",
+            FastingType::EidAlAdha => "Eid al-Adha",
+            FastingType::Tashriq => "Days of Tashriq",
+            FastingType::FridayExclusive => "Singling out Friday",
+            FastingType::SaturdayExclusive => "Singling out Saturday",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 /// The four major Sunni schools of jurisprudence.
@@ -74,9 +134,9 @@ impl Default for Madhab {
 /// Strategy for Daud fasting when a turn falls on a Haram day.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DaudStrategy {
-    /// Skip fasting entirely for this turn. Resume on the next calendar day.
+    /// Skip fasting entirely for this turn if it hits a Haram day. Resume on the next calendar day.
     Skip,
-    /// Postpone the fast to the next permissible day.
+    /// Postpone the fast to the next permissible day if it hits a Haram day.
     Postpone,
 }
 
@@ -90,7 +150,7 @@ impl Default for DaudStrategy {
 pub struct FastingAnalysis {
     pub date: chrono::NaiveDate,
     pub primary_status: FastingStatus,
-    pub types: Vec<FastingType>,
+    pub types: SmallVec<[FastingType; 4]>,
     // Store Hijri date components for on-demand description generation
     pub hijri_year: usize,
     pub hijri_month: usize,
@@ -98,7 +158,7 @@ pub struct FastingAnalysis {
 }
 
 impl FastingAnalysis {
-    pub fn new(date: chrono::NaiveDate, status: FastingStatus, types: Vec<FastingType>, hijri: (usize, usize, usize)) -> Self {
+    pub fn new(date: chrono::NaiveDate, status: FastingStatus, types: SmallVec<[FastingType; 4]>, hijri: (usize, usize, usize)) -> Self {
         Self {
             date,
             primary_status: status,
@@ -109,39 +169,7 @@ impl FastingAnalysis {
         }
     }
     
-    pub fn description(&self, localizer: &impl Localizer) -> String {
+    pub fn description(&self, localizer: &impl crate::i18n::Localizer) -> String {
         localizer.format_description(self)
-    }
-}
-
-pub trait Localizer {
-    fn month_name(&self, month: usize) -> String;
-    fn status_name(&self, status: FastingStatus) -> String;
-    fn type_name(&self, f_type: FastingType) -> String;
-    fn format_description(&self, analysis: &FastingAnalysis) -> String;
-}
-
-pub struct EnglishLocalizer;
-
-impl Localizer for EnglishLocalizer {
-    fn month_name(&self, month: usize) -> String {
-        crate::calendar::get_hijri_month_name(month).to_string()
-    }
-
-    fn status_name(&self, status: FastingStatus) -> String {
-        format!("{:?}", status)
-    }
-
-    fn type_name(&self, f_type: FastingType) -> String {
-        format!("{:?}", f_type)
-    }
-
-    fn format_description(&self, analysis: &FastingAnalysis) -> String {
-        format!(
-            "Hijri Date: {} {} {}", 
-            analysis.hijri_day, 
-            self.month_name(analysis.hijri_month), 
-            analysis.hijri_year
-        )
     }
 }

@@ -5,8 +5,10 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Error, Serialize, Deserialize)]
 pub enum ShaumError {
-    #[error("Date out of supported Hijri range (1938-2076)")]
-    HijriConversionError,
+    #[error("Date {0} is out of supported Hijri range (1938-2076)")]
+    DateOutOfRange(NaiveDate),
+    #[error("Analysis failed: {0}")]
+    AnalysisError(String),
 }
 
 /// Converts a Gregorian date to Hijri with a manual day adjustment.
@@ -18,15 +20,15 @@ pub enum ShaumError {
 pub fn to_hijri(date: NaiveDate, adjustment: i64) -> Result<HijriDate, ShaumError> {
     let adjusted_date = date + Duration::days(adjustment);
     
-    if adjusted_date.year() < 0 {
-        return Err(ShaumError::HijriConversionError);
+    if adjusted_date.year() < 1938 || adjusted_date.year() > 2076 {
+        return Err(ShaumError::DateOutOfRange(date));
     }
 
     HijriDate::from_gr(
         adjusted_date.year() as usize, 
         adjusted_date.month() as usize, 
         adjusted_date.day() as usize
-    ).map_err(|_| ShaumError::HijriConversionError)
+    ).map_err(|_| ShaumError::DateOutOfRange(date))
 }
 
 /// Helper to get Hijri month name or index if needed.

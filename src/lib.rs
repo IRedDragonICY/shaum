@@ -1,6 +1,8 @@
 pub mod calendar;
 pub mod rules;
 pub mod types;
+pub mod constants;
+pub mod i18n;
 
 pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy};
 pub use rules::check as analyze;
@@ -10,8 +12,24 @@ pub use rules::{RuleContext, MoonProvider};
 pub mod prelude {
     pub use crate::types::*;
     pub use crate::analyze;
+    pub use crate::analyze_date;
     pub use crate::to_hijri;
     pub use crate::{RuleContext, ShaumError};
+}
+
+/// A convenience function to analyze a date with default settings.
+/// 
+/// # Example
+/// ```
+/// use chrono::NaiveDate;
+/// use shaum::analyze_date;
+/// 
+/// let date = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
+/// let analysis = analyze_date(date).unwrap();
+/// println!("{}", analysis);
+/// ```
+pub fn analyze_date(date: NaiveDate) -> Result<FastingAnalysis, ShaumError> {
+    analyze(date, &RuleContext::default())
 }
 
 use chrono::NaiveDate;
@@ -58,7 +76,10 @@ impl Iterator for DaudIterator {
                         continue;
                     }
                 },
-                Err(e) => return Some(Err(e)),
+                Err(e) => {
+                    self.current = self.current.succ_opt()?;
+                    return Some(Err(e));
+                },
             }
         }
         None
@@ -196,5 +217,23 @@ mod tests {
              let diff = w[1] - w[0];
              assert!(diff.num_days() >= 2, "Daud schedule should skip at least one day");
          }
+    }
+
+    #[test]
+    fn test_daud_iterator_error_advancement() {
+        // Use a date range that is definitely out of range to trigger errors
+        let start = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(1900, 1, 5).unwrap();
+        let mut iter = generate_daud_schedule(start, end, RuleContext::default());
+        
+        let mut count = 0;
+        while let Some(item) = iter.next() {
+            assert!(item.is_err());
+            count += 1;
+            if count > 10 {
+                panic!("DaudIterator infinite loop detected!");
+            }
+        }
+        assert_eq!(count, 5);
     }
 }
