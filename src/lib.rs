@@ -2,7 +2,7 @@ pub mod calendar;
 pub mod rules;
 pub mod types;
 
-pub use types::{FastingStatus, FastingType, FastingAnalysis};
+pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy};
 pub use rules::check as analyze;
 pub use calendar::{to_hijri, ShaumError};
 pub use rules::{RuleContext, MoonProvider};
@@ -41,20 +41,14 @@ impl Iterator for DaudIterator {
                     self.current = self.current.succ_opt()?; 
 
                     if is_haram {
-                        // Daud logic: If Haram, skip fasting. 
-                        // Typically, the pattern toggles: Fast, Skip, Fast, Skip.
-                        // If "My Fast Day" is Haram -> I skip.
-                        // Does the pattern reset? Or continue?
-                        // Common view: Just don't fast. The day counts as a 'skip' in the alternating sense? 
-                        // Or we just skip the day entirely and check next?
-                        // "Skip one day" means don't fast.
-                        // The user's original logic was: "else if should_fast { schedule.push }"
-                        // It toggled `should_fast` unconditionally at end of loop.
-                        // So: Day 1 (should_fast=true, Haram) -> Skip list. Toggle -> false. 
-                        // Day 2 (should_fast=false, Mubah) -> Skip list. Toggle -> true.
-                        // This seems attempting to maintain the 1-on-1-off rhythm relative to the calendar.
-                        
-                        self.should_fast = !self.should_fast;
+                        match self.context.daud_strategy {
+                            DaudStrategy::Skip => {
+                                self.should_fast = !self.should_fast;
+                            },
+                            DaudStrategy::Postpone => {
+                                // Do not toggle, try again tomorrow
+                            }
+                        }
                         continue;
                     } else if self.should_fast {
                         self.should_fast = !self.should_fast;
@@ -73,12 +67,12 @@ impl Iterator for DaudIterator {
 
 /// Generates a Daud fasting schedule (skip one day) excluding Haram days.
 /// Returns an iterator.
-pub fn generate_daud_schedule(start: NaiveDate, end: NaiveDate, adjustment: i64) -> DaudIterator {
+pub fn generate_daud_schedule(start: NaiveDate, end: NaiveDate, context: RuleContext) -> DaudIterator {
     DaudIterator {
         current: start,
         end,
         should_fast: true, // Start with fasting unless Haram
-        context: RuleContext { adjustment },
+        context,
     }
 }
 
@@ -105,7 +99,7 @@ mod tests {
     fn test_eid_al_fitr_is_haram() {
         // Find 1 Shawwal 1445 (approx April 2024)
         let eid = find_hijri_date(1445, 10, 1);
-        let ctx = RuleContext { adjustment: 0 };
+        let ctx = RuleContext::default();
         let analysis = analyze(eid, &ctx).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.types.contains(&FastingType::EidAlFitr));
@@ -115,7 +109,7 @@ mod tests {
     fn test_eid_al_adha_is_haram() {
         // Find 10 Dhul Hijjah 1445
         let eid = find_hijri_date(1445, 12, 10);
-        let ctx = RuleContext { adjustment: 0 };
+        let ctx = RuleContext::default();
         let analysis = analyze(eid, &ctx).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.types.contains(&FastingType::EidAlAdha));
@@ -125,7 +119,7 @@ mod tests {
     fn test_tashriq_haram() {
         // 11 Dhul Hijjah
         let tashriq = find_hijri_date(1445, 12, 11);
-        let ctx = RuleContext { adjustment: 0 };
+        let ctx = RuleContext::default();
         let analysis = analyze(tashriq, &ctx).unwrap();
         assert!(analysis.primary_status.is_haram());
         assert!(analysis.types.contains(&FastingType::Tashriq));
@@ -135,7 +129,7 @@ mod tests {
     fn test_ramadhan_wajib() {
         // 1 Ramadhan 1445
         let ramadhan = find_hijri_date(1445, 9, 1);
-        let ctx = RuleContext { adjustment: 0 };
+        let ctx = RuleContext::default();
         let analysis = analyze(ramadhan, &ctx).unwrap();
         assert!(analysis.primary_status.is_wajib());
         assert!(analysis.types.contains(&FastingType::Ramadhan));
@@ -145,7 +139,7 @@ mod tests {
     fn test_arafah_sunnah() {
         // 9 Dhul Hijjah 1445
         let arafah = find_hijri_date(1445, 12, 9);
-        let ctx = RuleContext { adjustment: 0 };
+        let ctx = RuleContext::default();
         let analysis = analyze(arafah, &ctx).unwrap();
         // Arafah is Sunnah Muakkadah
         assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
@@ -161,7 +155,7 @@ mod tests {
         for _ in 0..5000 {
             if let Ok(h) = to_hijri(d, 0) {
                 if h.month() == 12 && h.day() == 9 && d.weekday() == chrono::Weekday::Fri {
-                    let ctx = RuleContext { adjustment: 0 };
+                    let ctx = RuleContext::default();
                     let analysis = analyze(d, &ctx).unwrap();
                     // Should be Sunnah, NOT Makruh.
                     assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
@@ -182,7 +176,7 @@ mod tests {
         let d = find_hijri_date(1445, 9, 1);
         
         // If we adjust -1
-        let ctx = RuleContext { adjustment: -1 };
+        let ctx = RuleContext { adjustment: -1, ..Default::default() };
         let analysis = analyze(d, &ctx).unwrap();
         
         assert_ne!(analysis.primary_status, FastingStatus::Wajib); // Should not be Wajib/Ramadhan
@@ -192,7 +186,7 @@ mod tests {
     fn test_daud_schedule() {
          let start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
          let end = start + chrono::Duration::days(10);
-         let schedule_iter = generate_daud_schedule(start, end, 0);
+         let schedule_iter = generate_daud_schedule(start, end, RuleContext::default());
          let schedule: Vec<NaiveDate> = schedule_iter.filter_map(|r| r.ok()).collect();
          
          // Just check it's not empty and skips days.

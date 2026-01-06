@@ -1,14 +1,48 @@
 use chrono::{Datelike, NaiveDate, Weekday};
 use crate::calendar::{to_hijri, ShaumError};
-use crate::types::{FastingAnalysis, FastingStatus, FastingType};
+use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy};
+use serde::{Serialize, Deserialize};
 
 pub trait MoonProvider {
     fn get_adjustment(&self, date: NaiveDate) -> i64;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleContext {
     pub adjustment: i64,
-    // Placeholders for future Madhab config
+    pub madhab: Madhab,
+    pub daud_strategy: DaudStrategy,
+}
+
+impl Default for RuleContext {
+    fn default() -> Self {
+        Self {
+            adjustment: 0,
+            madhab: Madhab::default(),
+            daud_strategy: DaudStrategy::default(),
+        }
+    }
+}
+
+impl RuleContext {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn adjustment(mut self, adjustment: i64) -> Self {
+        self.adjustment = adjustment;
+        self
+    }
+
+    pub fn madhab(mut self, madhab: Madhab) -> Self {
+        self.madhab = madhab;
+        self
+    }
+
+    pub fn daud_strategy(mut self, strategy: DaudStrategy) -> Self {
+        self.daud_strategy = strategy;
+        self
+    }
 }
 
 pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis, ShaumError> {
@@ -95,13 +129,21 @@ pub fn check(g_date: NaiveDate, context: &RuleContext) -> Result<FastingAnalysis
     }
 
     // --- 4. Makruh Checks (Friday/Saturday) ---
-    if status == FastingStatus::Mubah {
-        if weekday == Weekday::Fri {
-            types.push(FastingType::FridayExclusive);
-            status = FastingStatus::Makruh;
-        } else if weekday == Weekday::Sat {
-            types.push(FastingType::SaturdayExclusive);
-            status = FastingStatus::Makruh;
+    // General Rule: Singling out Friday or Saturday is Makruh in most Madhabs.
+    // Exception: If it coincides with a Sunnah (Arafah, Ashura, etc.) or Wajib, it is not Makruh.
+    // We handle this by checking if status is still Mubah (meaning no other reason to fast was found).
+    
+    match context.madhab {
+        Madhab::Shafi | Madhab::Hanafi | Madhab::Maliki | Madhab::Hanbali => {
+             if status == FastingStatus::Mubah {
+                if weekday == Weekday::Fri {
+                    types.push(FastingType::FridayExclusive);
+                    status = FastingStatus::Makruh;
+                } else if weekday == Weekday::Sat {
+                    types.push(FastingType::SaturdayExclusive);
+                    status = FastingStatus::Makruh;
+                }
+            }
         }
     }
 

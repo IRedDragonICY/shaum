@@ -17,6 +17,11 @@ pub enum ShaumError {
 ///   A positive adjustment means the Hijri calendar is ahead (moon seen earlier).
 pub fn to_hijri(date: NaiveDate, adjustment: i64) -> Result<HijriDate, ShaumError> {
     let adjusted_date = date + Duration::days(adjustment);
+    
+    if adjusted_date.year() < 0 {
+        return Err(ShaumError::HijriConversionError);
+    }
+
     HijriDate::from_gr(
         adjusted_date.year() as usize, 
         adjusted_date.month() as usize, 

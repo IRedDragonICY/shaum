@@ -56,6 +56,36 @@ pub enum FastingType {
     SaturdayExclusive,
 }
 
+/// The four major Sunni schools of jurisprudence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Madhab {
+    Shafi,
+    Hanafi,
+    Maliki,
+    Hanbali,
+}
+
+impl Default for Madhab {
+    fn default() -> Self {
+        Self::Shafi
+    }
+}
+
+/// Strategy for Daud fasting when a turn falls on a Haram day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DaudStrategy {
+    /// Skip fasting entirely for this turn. Resume on the next calendar day.
+    Skip,
+    /// Postpone the fast to the next permissible day.
+    Postpone,
+}
+
+impl Default for DaudStrategy {
+    fn default() -> Self {
+        Self::Skip
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FastingAnalysis {
     pub date: chrono::NaiveDate,
