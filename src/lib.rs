@@ -44,6 +44,7 @@ pub mod i18n;
 pub mod extension;
 pub mod query;
 pub mod macros;
+pub mod astronomy;
 
 pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode};
 pub use rules::{analyze, check};

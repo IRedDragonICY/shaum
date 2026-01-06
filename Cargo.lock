@@ -43,6 +43,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "astro"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "199632e1a87451cf771da7adeba192cab923ede42657ac3de0133ba6f4ae14be"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1361,8 +1367,9 @@ dependencies = [
 
 [[package]]
 name = "shaum"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
+ "astro",
  "async-trait",
  "chrono",
  "criterion",
@@ -1374,6 +1381,7 @@ dependencies = [
  "smallvec",
  "thiserror",
  "tokio",
+ "vsop87",
  "wiremock",
 ]
 
@@ -1641,6 +1649,12 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+
+[[package]]
+name = "vsop87"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37cde47f1fc639613a2a48a6a8685db063693c55ea6b09260b78f95c9e775575"
 
 [[package]]
 name = "wait-timeout"
