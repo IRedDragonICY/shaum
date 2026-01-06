@@ -1,6 +1,20 @@
 use serde::{Serialize, Deserialize};
 use smallvec::SmallVec;
 use std::fmt;
+use std::borrow::Cow;
+
+/// Geographic coordinate for sunset calculation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GeoCoordinate {
+    pub lat: f64,
+    pub lng: f64,
+}
+
+impl GeoCoordinate {
+    pub fn new(lat: f64, lng: f64) -> Self {
+        Self { lat, lng }
+    }
+}
 
 /// Fasting status (Hukum). Ordered by priority: Haram > Wajib > SunnahMuakkadah > Sunnah > Makruh > Mubah.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -35,55 +49,65 @@ impl fmt::Display for FastingStatus {
     }
 }
 
-/// Fasting type/reason.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum FastingType {
-    Ramadhan,
-    Arafah,
-    Tasua,
-    Ashura,
-    AyyamulBidh,
-    Monday,
-    Thursday,
-    Shawwal,
-    Daud,
-    EidAlFitr,
-    EidAlAdha,
-    Tashriq,
-    FridayExclusive,
-    SaturdayExclusive,
-}
+/// Extensible fasting type/reason.
+/// Wraps a string to allow both standard and custom fasting types.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FastingType(pub Cow<'static, str>);
 
 impl FastingType {
+    /// Creates a new custom fasting type.
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self(name.into())
+    }
+
+    pub fn custom(name: &str) -> Self {
+        Self(Cow::Owned(name.to_string()))
+    }
+
+    pub const RAMADHAN: Self = Self(Cow::Borrowed("Ramadhan"));
+    pub const ARAFAH: Self = Self(Cow::Borrowed("Arafah"));
+    pub const TASUA: Self = Self(Cow::Borrowed("Tasua"));
+    pub const ASHURA: Self = Self(Cow::Borrowed("Ashura"));
+    pub const AYYAMUL_BIDH: Self = Self(Cow::Borrowed("AyyamulBidh"));
+    pub const MONDAY: Self = Self(Cow::Borrowed("Monday"));
+    pub const THURSDAY: Self = Self(Cow::Borrowed("Thursday"));
+    pub const SHAWWAL: Self = Self(Cow::Borrowed("Shawwal"));
+    pub const DAUD: Self = Self(Cow::Borrowed("Daud"));
+    pub const EID_AL_FITR: Self = Self(Cow::Borrowed("EidAlFitr"));
+    pub const EID_AL_ADHA: Self = Self(Cow::Borrowed("EidAlAdha"));
+    pub const TASHRIQ: Self = Self(Cow::Borrowed("Tashriq"));
+    pub const FRIDAY_EXCLUSIVE: Self = Self(Cow::Borrowed("FridayExclusive"));
+    pub const SATURDAY_EXCLUSIVE: Self = Self(Cow::Borrowed("SaturdayExclusive"));
+
+    // Legacy-like constructors for backward compat (where possible) or ease of use
+    #[allow(non_snake_case)] pub fn Ramadhan() -> Self { Self::RAMADHAN }
+    #[allow(non_snake_case)] pub fn Arafah() -> Self { Self::ARAFAH }
+    #[allow(non_snake_case)] pub fn Tasua() -> Self { Self::TASUA }
+    #[allow(non_snake_case)] pub fn Ashura() -> Self { Self::ASHURA }
+    #[allow(non_snake_case)] pub fn AyyamulBidh() -> Self { Self::AYYAMUL_BIDH }
+    #[allow(non_snake_case)] pub fn Monday() -> Self { Self::MONDAY }
+    #[allow(non_snake_case)] pub fn Thursday() -> Self { Self::THURSDAY }
+    #[allow(non_snake_case)] pub fn Shawwal() -> Self { Self::SHAWWAL }
+    #[allow(non_snake_case)] pub fn Daud() -> Self { Self::DAUD }
+    #[allow(non_snake_case)] pub fn EidAlFitr() -> Self { Self::EID_AL_FITR }
+    #[allow(non_snake_case)] pub fn EidAlAdha() -> Self { Self::EID_AL_ADHA }
+    #[allow(non_snake_case)] pub fn Tashriq() -> Self { Self::TASHRIQ }
+    #[allow(non_snake_case)] pub fn FridayExclusive() -> Self { Self::FRIDAY_EXCLUSIVE }
+    #[allow(non_snake_case)] pub fn SaturdayExclusive() -> Self { Self::SATURDAY_EXCLUSIVE }
+
     pub fn is_haram_type(&self) -> bool {
-        matches!(self, Self::EidAlFitr | Self::EidAlAdha | Self::Tashriq)
+        matches!(self.0.as_ref(), "EidAlFitr" | "EidAlAdha" | "Tashriq")
     }
     
     pub fn is_sunnah_type(&self) -> bool {
-        matches!(self, Self::Arafah | Self::Tasua | Self::Ashura | Self::AyyamulBidh | 
-                 Self::Monday | Self::Thursday | Self::Shawwal | Self::Daud)
+        matches!(self.0.as_ref(), "Arafah" | "Tasua" | "Ashura" | "AyyamulBidh" | 
+                 "Monday" | "Thursday" | "Shawwal" | "Daud")
     }
 }
 
 impl fmt::Display for FastingType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Ramadhan => "Ramadhan",
-            Self::Arafah => "Day of Arafah",
-            Self::Tasua => "Tasu'a (9th Muharram)",
-            Self::Ashura => "Ashura (10th Muharram)",
-            Self::AyyamulBidh => "Ayyamul Bidh (13th, 14th, 15th)",
-            Self::Monday => "Monday",
-            Self::Thursday => "Thursday",
-            Self::Shawwal => "Six Days of Shawwal",
-            Self::Daud => "Fasting of Prophet Daud (A.S)",
-            Self::EidAlFitr => "Eid al-Fitr",
-            Self::EidAlAdha => "Eid al-Adha",
-            Self::Tashriq => "Days of Tashriq",
-            Self::FridayExclusive => "Singling out Friday",
-            Self::SaturdayExclusive => "Singling out Saturday",
-        };
-        write!(f, "{}", s)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -113,23 +137,54 @@ impl Default for DaudStrategy {
     fn default() -> Self { Self::Skip }
 }
 
+/// Machine-readable trace codes for rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TraceCode {
+    // Harams
+    EidAlFitr,
+    EidAlAdha,
+    Tashriq,
+    FridaySingledOut,
+    SaturdaySingledOut,
+    // Wajibs
+    Ramadhan,
+    // Sunnahs
+    Arafah,
+    Tasua,
+    Ashura,
+    AyyamulBidh,
+    Monday,
+    Thursday,
+    Shawwal,
+    Daud,
+    // Generic
+    Custom,
+    Debug,
+}
+
+impl fmt::Display for TraceCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// Rule trace event for explainability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleTrace {
-    pub rule: String,
-    pub reason: String,
+    pub code: TraceCode,
+    pub details: Option<String>,
 }
 
 impl RuleTrace {
-    pub fn new(rule: impl Into<String>, reason: impl Into<String>) -> Self {
-        Self { rule: rule.into(), reason: reason.into() }
+    pub fn new(code: TraceCode, details: impl Into<Option<String>>) -> Self {
+        Self { code, details: details.into() }
     }
 }
 
 /// Fasting analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FastingAnalysis {
-    pub date: chrono::NaiveDate,
+    pub date: chrono::DateTime<chrono::Utc>,
     pub primary_status: FastingStatus,
     pub hijri_year: usize,
     pub hijri_month: usize,
@@ -140,7 +195,7 @@ pub struct FastingAnalysis {
 
 impl FastingAnalysis {
     pub fn new(
-        date: chrono::NaiveDate,
+        date: chrono::DateTime<chrono::Utc>,
         status: FastingStatus,
         types: SmallVec<[FastingType; 2]>,
         hijri: (usize, usize, usize),
@@ -157,7 +212,7 @@ impl FastingAnalysis {
     }
 
     pub fn with_traces(
-        date: chrono::NaiveDate,
+        date: chrono::DateTime<chrono::Utc>,
         status: FastingStatus,
         types: SmallVec<[FastingType; 2]>,
         hijri: (usize, usize, usize),
@@ -178,17 +233,17 @@ impl FastingAnalysis {
     pub fn reasons(&self) -> impl Iterator<Item = &FastingType> { self.reasons.iter() }
 
     /// Checks if `ftype` is among the reasons.
-    pub fn has_reason(&self, ftype: FastingType) -> bool { self.reasons.contains(&ftype) }
+    pub fn has_reason(&self, ftype: &FastingType) -> bool { self.reasons.contains(ftype) }
 
     /// Returns reason count.
     pub fn reason_count(&self) -> usize { self.reasons.len() }
 
-    pub fn is_ramadhan(&self) -> bool { self.has_reason(FastingType::Ramadhan) }
-    pub fn is_white_day(&self) -> bool { self.has_reason(FastingType::AyyamulBidh) }
-    pub fn is_eid(&self) -> bool { self.has_reason(FastingType::EidAlFitr) || self.has_reason(FastingType::EidAlAdha) }
-    pub fn is_tashriq(&self) -> bool { self.has_reason(FastingType::Tashriq) }
-    pub fn is_arafah(&self) -> bool { self.has_reason(FastingType::Arafah) }
-    pub fn is_ashura(&self) -> bool { self.has_reason(FastingType::Ashura) }
+    pub fn is_ramadhan(&self) -> bool { self.has_reason(&FastingType::RAMADHAN) }
+    pub fn is_white_day(&self) -> bool { self.has_reason(&FastingType::AYYAMUL_BIDH) }
+    pub fn is_eid(&self) -> bool { self.has_reason(&FastingType::EID_AL_FITR) || self.has_reason(&FastingType::EID_AL_ADHA) }
+    pub fn is_tashriq(&self) -> bool { self.has_reason(&FastingType::TASHRIQ) }
+    pub fn is_arafah(&self) -> bool { self.has_reason(&FastingType::ARAFAH) }
+    pub fn is_ashura(&self) -> bool { self.has_reason(&FastingType::ASHURA) }
 
     /// Returns human-readable explanation.
     pub fn explain(&self) -> String {
@@ -196,7 +251,11 @@ impl FastingAnalysis {
             self.generate_explanation()
         } else {
             self.traces.iter()
-                .map(|t| format!("{}: {}", t.rule, t.reason))
+                .map(|t| if let Some(d) = &t.details {
+                    format!("{}: {}", t.code, d)
+                } else {
+                    t.code.to_string()
+                })
                 .collect::<Vec<_>>()
                 .join("; ")
         }
@@ -237,10 +296,6 @@ impl FastingAnalysis {
     pub fn description(&self, localizer: &impl crate::i18n::Localizer) -> String {
         localizer.format_description(self)
     }
-
-    /// **Deprecated**: Use `reasons()` instead.
-    #[deprecated(since = "0.2.0", note = "Use `reasons()` instead")]
-    pub fn types(&self) -> &SmallVec<[FastingType; 2]> { &self.reasons }
 }
 
 impl fmt::Display for FastingAnalysis {

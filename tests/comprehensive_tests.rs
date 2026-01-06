@@ -1,4 +1,4 @@
-use shaum::{to_hijri, analyze, RuleContext, Madhab, DaudStrategy, FastingStatus, generate_daud_schedule};
+use shaum::{to_hijri, check, RuleContext, Madhab, DaudStrategy, FastingStatus, generate_daud_schedule, FastingType};
 use chrono::{NaiveDate, Datelike};
 
 #[test]
@@ -33,7 +33,7 @@ fn test_arafah_friday_not_makruh() {
         if h.month() == 12 && h.day() == 9 {
             if d.weekday() == chrono::Weekday::Fri {
                 let ctx = RuleContext::new().madhab(Madhab::Shafi);
-                let analysis = analyze(d, &ctx); // No unwrap needed
+                let analysis = check(d, &ctx); // No unwrap needed
                 
                 // Should be Sunnah, NOT Makruh
                 assert!(!analysis.primary_status.is_haram());

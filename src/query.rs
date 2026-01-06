@@ -71,7 +71,7 @@ impl FastingQuery {
     fn matches(&self, analysis: &FastingAnalysis) -> bool {
         if self.exclude_haram && analysis.primary_status.is_haram() { return false; }
         if self.exclude_makruh && analysis.primary_status.is_makruh() { return false; }
-        if let Some(t) = self.require_type { if !analysis.has_reason(t) { return false; } }
+        if let Some(ref t) = self.require_type { if !analysis.has_reason(t) { return false; } }
 
         match self.filter {
             FilterMode::All => true,

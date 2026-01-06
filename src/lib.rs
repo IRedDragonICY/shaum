@@ -44,16 +44,17 @@ pub mod extension;
 pub mod query;
 pub mod macros;
 
-pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy};
-pub use rules::check as analyze;
+pub use types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode};
+pub use rules::{analyze, check};
 pub use calendar::ShaumError; // Keeping ShaumError for now as types might use it, simplified
 pub use calendar::to_hijri;
 pub use rules::{RuleContext, MoonProvider};
 
 /// Re-exports for convenience.
 pub mod prelude {
-    pub use crate::types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy};
+    pub use crate::types::{FastingStatus, FastingType, FastingAnalysis, Madhab, DaudStrategy, GeoCoordinate, TraceCode};
     pub use crate::analyze;
+    pub use crate::check;
     pub use crate::analyze_date;
     pub use crate::to_hijri;
     pub use crate::{RuleContext, ShaumError, MoonProvider};
@@ -65,7 +66,7 @@ use chrono::NaiveDate;
 
 /// Analyzes date with default context. Infallible.
 pub fn analyze_date(date: NaiveDate) -> FastingAnalysis {
-    analyze(date, &RuleContext::default())
+    check(date, &RuleContext::default())
 }
 
 
@@ -96,7 +97,7 @@ impl Iterator for DaudIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.current <= self.end {
-            let analysis = analyze(self.current, &self.context);
+            let analysis = check(self.current, &self.context);
             let is_haram = analysis.primary_status.is_haram();
             let date_to_emit = self.current;
             self.current = self.current.succ_opt()?;
@@ -165,41 +166,41 @@ mod tests {
     #[test]
     fn test_eid_al_fitr_is_haram() {
         let eid = find_hijri_date(1445, 10, 1);
-        let analysis = analyze(eid, &RuleContext::default());
+        let analysis = check(eid, &RuleContext::default());
         assert!(analysis.primary_status.is_haram());
-        assert!(analysis.has_reason(FastingType::EidAlFitr));
+        assert!(analysis.has_reason(&FastingType::EID_AL_FITR));
     }
 
     #[test]
     fn test_eid_al_adha_is_haram() {
         let eid = find_hijri_date(1445, 12, 10);
-        let analysis = analyze(eid, &RuleContext::default());
+        let analysis = check(eid, &RuleContext::default());
         assert!(analysis.primary_status.is_haram());
-        assert!(analysis.has_reason(FastingType::EidAlAdha));
+        assert!(analysis.has_reason(&FastingType::EID_AL_ADHA));
     }
 
     #[test]
     fn test_tashriq_haram() {
         let tashriq = find_hijri_date(1445, 12, 11);
-        let analysis = analyze(tashriq, &RuleContext::default());
+        let analysis = check(tashriq, &RuleContext::default());
         assert!(analysis.primary_status.is_haram());
-        assert!(analysis.has_reason(FastingType::Tashriq));
+        assert!(analysis.has_reason(&FastingType::TASHRIQ));
     }
 
     #[test]
     fn test_ramadhan_wajib() {
         let ramadhan = find_hijri_date(1445, 9, 1);
-        let analysis = analyze(ramadhan, &RuleContext::default());
+        let analysis = check(ramadhan, &RuleContext::default());
         assert!(analysis.primary_status.is_wajib());
-        assert!(analysis.has_reason(FastingType::Ramadhan));
+        assert!(analysis.has_reason(&FastingType::RAMADHAN));
     }
 
     #[test]
     fn test_arafah_sunnah() {
         let arafah = find_hijri_date(1445, 12, 9);
-        let analysis = analyze(arafah, &RuleContext::default());
+        let analysis = check(arafah, &RuleContext::default());
         assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
-        assert!(analysis.has_reason(FastingType::Arafah));
+        assert!(analysis.has_reason(&FastingType::ARAFAH));
     }
 
     #[test]
@@ -208,7 +209,7 @@ mod tests {
         for _ in 0..5000 {
             let h = to_hijri(d, 0);
             if h.month() == 12 && h.day() == 9 && d.weekday() == chrono::Weekday::Fri {
-                let analysis = analyze(d, &RuleContext::default());
+                let analysis = check(d, &RuleContext::default());
                 assert_eq!(analysis.primary_status, FastingStatus::SunnahMuakkadah);
                 return;
             }
@@ -221,7 +222,7 @@ mod tests {
     fn test_adjustment_shifts_date() {
         let d = find_hijri_date(1445, 9, 1);
         let ctx = RuleContext::new().adjustment(-1);
-        let analysis = analyze(d, &ctx);
+        let analysis = check(d, &ctx);
         assert_ne!(analysis.primary_status, FastingStatus::Wajib);
     }
 
@@ -240,7 +241,7 @@ mod tests {
     #[test]
     fn test_explain_output() {
         let ramadhan = find_hijri_date(1445, 9, 15);
-        let analysis = analyze(ramadhan, &RuleContext::default());
+        let analysis = check(ramadhan, &RuleContext::default());
         assert!(analysis.explain().contains("Ramadhan"));
     }
 

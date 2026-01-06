@@ -16,15 +16,17 @@ proptest! {
     
     /// Invariant: Status Hierarchy (Haram trumps all).
     #[test]
+    /// Invariant: Status Hierarchy (Haram trumps all).
+    #[test]
     fn haram_trumps_all(days in 0i32..73000) {
         let base = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
         let analysis = analyze_date(date);
         
-        if analysis.has_reason(FastingType::EidAlFitr) || 
-           analysis.has_reason(FastingType::EidAlAdha) || 
-           analysis.has_reason(FastingType::Tashriq) {
+        if analysis.has_reason(&FastingType::EID_AL_FITR) || 
+           analysis.has_reason(&FastingType::EID_AL_ADHA) || 
+           analysis.has_reason(&FastingType::TASHRIQ) {
             assert!(analysis.primary_status.is_haram(), "Date {:?} has Haram reason but status is {:?}", date, analysis.primary_status);
         }
     }
@@ -37,7 +39,7 @@ proptest! {
         
         let analysis = analyze_date(date);
         
-        if analysis.has_reason(FastingType::Ramadhan) {
+        if analysis.has_reason(&FastingType::RAMADHAN) {
             // Ramadhan is Wajib. Exceptions (Eid?) No, Ramadhan ends before Eid.
             assert!(analysis.primary_status.is_wajib(), "Date {:?} is Ramadhan but not Wajib: {:?}", date, analysis.primary_status);
         }
