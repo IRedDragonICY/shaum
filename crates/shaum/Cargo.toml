@@ -1,0 +1,18 @@
+[package]
+name = "shaum"
+description = "Production-grade Islamic fasting (Shaum) jurisprudence engine with high-precision astronomy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords = ["islam", "prayer-times", "fasting", "astronomy", "fiqh"]
+categories = ["science", "date-and-time"]
+
+[dependencies]
+shaum-core = { version = "0.8.0", path = "../shaum_core" }
+
+[features]
+default = []
+async = ["shaum-core/async"]
+local-geo = ["shaum-core/local-geo"]

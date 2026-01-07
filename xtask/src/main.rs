@@ -523,6 +523,7 @@ const WORKSPACE_CRATES: &[&str] = &[
     "shaum-rules",      // Depends on shaum-types, shaum-calendar, shaum-astronomy
     "shaum-network",    // Depends on shaum-types
     "shaum-core",       // Facade - depends on all above
+    "shaum",            // Main Facade - depends on shaum-core
 ];
 
 fn publish_crates(dry_run: bool) -> Result<()> {

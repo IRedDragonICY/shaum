@@ -9,7 +9,7 @@ members = [
     "crates/shaum_core",
     "bindings/shaum_wasm",
     "bindings/shaum_py",
-    "xtask",
+    "xtask", "crates/shaum",
 ]
 
 [workspace.package]
