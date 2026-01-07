@@ -105,7 +105,7 @@ use chrono::{TimeZone, Datelike};
 
 /// Jakarta coordinates for reference.
 fn jakarta_coords() -> GeoCoordinate {
-    GeoCoordinate { lat: -6.2088, lng: 106.8456 }
+    GeoCoordinate::new_unchecked(-6.2088, 106.8456)
 }
 
 /// Test data: (year, month, day) of first Ramadan
@@ -234,8 +234,8 @@ fn test_historical_ramadan_indonesia_2000_2024() {
         let dt_first = chrono::Utc.with_ymd_and_hms(*year, *month, *day, 11, 0, 0).unwrap();
         
         let criteria = VisibilityCriteria::default();
-        let report_rukyat = calculate_visibility(dt_rukyat, coords, &criteria);
-        let report_first = calculate_visibility(dt_first, coords, &criteria);
+        let report_rukyat = calculate_visibility(dt_rukyat, coords, &criteria).unwrap();
+        let report_first = calculate_visibility(dt_first, coords, &criteria).unwrap();
         
         let elon_increased = report_first.elongation > report_rukyat.elongation;
         let result = if elon_increased { "✓ PASS" } else { "✗ FAIL" };
@@ -277,7 +277,7 @@ fn predict_ramadan_2026() {
     // Try multiple dates around the expected start
     for day in 16..=20 {
         let dt = chrono::Utc.with_ymd_and_hms(2026, 2, day, 11, 0, 0).unwrap();
-        let report = calculate_visibility(dt, coords, &VisibilityCriteria::default());
+        let report = calculate_visibility(dt, coords, &VisibilityCriteria::default()).unwrap();
         
         let mabims_status = if report.meets_mabims { "✓ MABIMS" } else { "✗ Belum" };
         
@@ -287,7 +287,7 @@ fn predict_ramadan_2026() {
     
     // Verify Feb 18 meets MABIMS
     let dt_feb18 = chrono::Utc.with_ymd_and_hms(2026, 2, 18, 11, 0, 0).unwrap();
-    let report_feb18 = calculate_visibility(dt_feb18, coords, &VisibilityCriteria::default());
+    let report_feb18 = calculate_visibility(dt_feb18, coords, &VisibilityCriteria::default()).unwrap();
     
     println!("\n>>> Menurut engine astronomi, Ramadan 2026:");
     println!("    Tanggal 18 Februari 2026:");

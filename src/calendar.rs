@@ -40,6 +40,18 @@ pub enum ShaumError {
     #[error("Moon provider error: {0}")]
     MoonProviderError(String),
 
+    /// Coordinate or input validation error.
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    /// Astronomy calculation error (e.g., polar regions).
+    #[error("Astronomy error: {0}")]
+    AstronomyError(String),
+
+    /// Database error (e.g., MaxMind GeoIP lookup).
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
     /// Network error (async/remote operations).
     #[cfg(feature = "async")]
     #[error("Network error: {0}")]

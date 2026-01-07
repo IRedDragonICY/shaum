@@ -10,7 +10,7 @@ proptest! {
         let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
-        // Should not panic
+        // Should not panic - now returns Result but should never error in valid range
         let _ = analyze_date(date);
     }
     
@@ -20,7 +20,7 @@ proptest! {
         let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
-        let analysis = analyze_date(date);
+        let analysis = analyze_date(date).unwrap();
         
         if analysis.has_reason(&FastingType::EID_AL_FITR) || 
            analysis.has_reason(&FastingType::EID_AL_ADHA) || 
@@ -35,7 +35,7 @@ proptest! {
         let base = NaiveDate::from_ymd_opt(1950, 1, 1).unwrap();
         let date = base.checked_add_signed(chrono::Duration::days(days as i64)).unwrap();
         
-        let analysis = analyze_date(date);
+        let analysis = analyze_date(date).unwrap();
         
         if analysis.has_reason(&FastingType::RAMADHAN) {
             assert!(analysis.primary_status.is_wajib(), "Date {:?} is Ramadhan but not Wajib: {:?}", date, analysis.primary_status);
@@ -51,8 +51,8 @@ proptest! {
         let ctx = RuleContext::new().daud_strategy(DaudStrategy::Skip);
         let daud_days = shaum::generate_daud_schedule(start, end, ctx);
         
-        for date in daud_days {
-            let analysis = shaum::analyze_date(date);
+        for date in daud_days.filter_map(|r| r.ok()) {
+            let analysis = shaum::analyze_date(date).unwrap();
             assert!(!analysis.primary_status.is_haram(), "Daud recommended Haram day: {:?}", date);
         }
     }

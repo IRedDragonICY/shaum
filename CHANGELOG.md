@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-01-07
+
+### Added
+- **High Precision Mode**: Integrated Altitude/Elevation into prayer time calculations (`GeoCoordinate::altitude`).
+- **Reverse Geocoding**: Added `reverse_geocode()` using OpenStreetMap Nominatim for detailed address info.
+- **Global Validation**: Verified accuracy for 8 major global cities and 10 ASEAN capitals.
+- **Real-Time Validation**: Added `examples/check_accuracy_today.rs` to verify accuracy against live API data.
+- **Configuration**: Added `ihtiyat_minutes` (safety margin) and `rounding_granularity_seconds` to `PrayerParams`.
+- **Regional Presets**: Added `ISNA` and `UmmAlQura` presets to `PrayerParams`.
+
+### Fixed
+- **Altitude Correction**: Fixed logic to correctly account for dip of horizon at high altitudes (e.g. Bandung, Mecca).
+- **Timezone Handling**: Improved robust timezone offset handling in validation tests.
+
 ## [0.6.0] - 2026-01-06
 
 ### Added

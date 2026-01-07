@@ -113,7 +113,7 @@ pub struct DefaultSunsetProvider;
 impl SunsetProvider for DefaultSunsetProvider {
     fn get_sunset(&self, date: NaiveDate, coords: GeoCoordinate) -> Result<DateTime<Utc>, ShaumError> {
         // Use the astronomy engine for accurate sunset calculation
-        Ok(crate::astronomy::visibility::estimate_sunset(date, coords))
+        crate::astronomy::visibility::estimate_sunset(date, coords)
     }
 }
 

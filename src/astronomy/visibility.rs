@@ -57,7 +57,7 @@ pub fn datetime_to_jd(dt: DateTime<Utc>) -> f64 {
 }
 
 /// Converts Julian Day to `DateTime<Utc>` (approximate).
-pub fn jd_to_datetime(jd: f64) -> DateTime<Utc> {
+pub fn jd_to_datetime(jd: f64) -> Result<DateTime<Utc>, crate::calendar::ShaumError> {
     // Inverse algorithm from Meeus, Chapter 7.
     let z = (jd + 0.5).floor();
     let f = jd + 0.5 - z;
@@ -81,24 +81,68 @@ pub fn jd_to_datetime(jd: f64) -> DateTime<Utc> {
 
     chrono::Utc
         .with_ymd_and_hms(year as i32, month as u32, day_int, hours, minutes, seconds as u32)
-        .unwrap()
+        .single()
+        .ok_or_else(|| crate::calendar::ShaumError::AstronomyError(
+            format!("Invalid datetime from JD {}", jd)
+        ))
 }
 
-/// Estimates the approximate sunset time for a given date and location.
+
+
+/// Estimates sunset time with altitude correction for horizon dip.
 ///
-/// Uses a simple algorithm to find when the Sun's altitude is approximately -0.833°
-/// (accounting for atmospheric refraction and Sun's semi-diameter).
-pub fn estimate_sunset(date: chrono::NaiveDate, coords: GeoCoordinate) -> DateTime<Utc> {
-    // Start from an initial guess of 18:00 local time
-    let initial_hour = 18.0 - coords.lng / 15.0; // Approximate UTC hour of local 18:00
+/// # Arguments
+/// * `date` - The date to calculate sunset for
+/// * `coords` - Geographic coordinates (latitude, longitude, altitude)
+///
+/// The sunset angle is adjusted for:
+/// - Atmospheric refraction (~34 arcminutes)
+/// - Sun's semi-diameter (~16 arcminutes)
+/// - Horizon dip due to altitude: dip = 2.076 * sqrt(altitude_m) arcminutes
+///
+/// # Errors
+/// Returns `ShaumError::AstronomyError` for polar regions (|lat| > 66.5°).
+pub fn estimate_sunset(
+    date: chrono::NaiveDate, 
+    coords: GeoCoordinate,
+) -> Result<DateTime<Utc>, crate::calendar::ShaumError> {
+    use crate::calendar::ShaumError;
     
+    let altitude_m = coords.altitude;
+
+    // Polar region check - sun may not set/rise normally
+    if coords.lat.abs() > 66.5 {
+        return Err(ShaumError::AstronomyError(
+            format!("Polar region latitude {:.2}° not supported (sun may not set)", coords.lat)
+        ));
+    }
+
+    // Start from noon UTC (always valid, avoids the hour overflow panic)
     let base_dt = chrono::Utc
-        .with_ymd_and_hms(date.year(), date.month(), date.day(), initial_hour as u32, 0, 0)
-        .unwrap();
+        .with_ymd_and_hms(date.year(), date.month(), date.day(), 12, 0, 0)
+        .single()
+        .ok_or_else(|| ShaumError::AstronomyError("Invalid date for sunset calculation".to_string()))?;
+
+    // Calculate offset to approximate local 18:00
+    // Local time ≈ UTC + (longitude / 15) hours
+    // So UTC 18:00 local ≈ 18:00 - (lng / 15) = 18 - lng/15 hours from midnight
+    // From noon (12:00), offset = (18 - lng/15) - 12 = 6 - lng/15 hours
+    let offset_hours = 6.0 - coords.lng / 15.0;
+    let offset_minutes = (offset_hours * 60.0).round() as i64;
+    let mut dt = base_dt + Duration::minutes(offset_minutes);
+    
+    // Calculate target sunset altitude with corrections:
+    // - Standard refraction: 34 arcminutes = 0.567°
+    // - Sun semi-diameter: 16 arcminutes = 0.267°
+    // - Horizon dip: 2.076 * sqrt(altitude_m) arcminutes
+    let horizon_dip_arcmin = 2.076 * altitude_m.max(0.0).sqrt();
+    let horizon_dip_deg = horizon_dip_arcmin / 60.0;
+    
+    // Target altitude = -(refraction + semi_diameter + horizon_dip)
+    let target_alt = -(0.567 + 0.267 + horizon_dip_deg);
     
     // Iterative refinement (simple Newton-Raphson-like)
-    let mut dt = base_dt;
-    for _ in 0..5 {
+    for _ in 0..8 {  // Increased iterations for better precision
         let jd = datetime_to_jd(dt);
         let (sun_lon, sun_lat, _) = vsop87::calculate(jd);
         let obliquity = coords::mean_obliquity(jd);
@@ -106,28 +150,27 @@ pub fn estimate_sunset(date: chrono::NaiveDate, coords: GeoCoordinate) -> DateTi
         let lst = coords::local_sidereal_time(jd, coords.lng);
         let (_, sun_alt) = coords::equatorial_to_horizontal(sun_ra, sun_dec, lst, coords.lat);
         
-        // Target altitude for sunset: -0.833° (refraction + semi-diameter)
-        let target_alt = -0.833;
         let alt_diff = sun_alt - target_alt;
         
-        // Sun moves approximately 15°/hour, altitude change rate depends on latitude
-        // Simplified: assume ~4 minutes per 1° altitude near sunset
+        // Sun moves approximately 15°/hour = 0.25°/min
+        // But altitude rate varies with latitude and time of year
+        // Near sunset at mid-latitudes: ~1° per 4 minutes is reasonable
         let time_correction_minutes = alt_diff * 4.0;
         
-        if time_correction_minutes.abs() < 0.1 {
+        if time_correction_minutes.abs() < 0.05 {  // ~3 second precision
             break;
         }
         
         dt = dt + Duration::seconds((time_correction_minutes * 60.0) as i64);
     }
     
-    dt
+    Ok(dt)
 }
 
 /// Calculates the approximate time of the last new moon (conjunction) before the given date.
 ///
 /// Uses a simplified algorithm based on the Metonic cycle.
-fn approximate_last_new_moon(dt: DateTime<Utc>) -> DateTime<Utc> {
+fn approximate_last_new_moon(dt: DateTime<Utc>) -> Result<DateTime<Utc>, crate::calendar::ShaumError> {
     // Mean synodic month: 29.530588853 days
     const SYNODIC_MONTH: f64 = 29.530588853;
     
@@ -164,15 +207,18 @@ fn calculate_elongation(sun_lon: f64, sun_lat: f64, moon_lon: f64, moon_lat: f64
 /// * `datetime` - Observation datetime in UTC
 /// * `coords` - Observer's geographic coordinates
 /// * `criteria` - Visibility criteria thresholds (altitude, elongation)
+///
+/// # Errors
+/// Returns `ShaumError::AstronomyError` for polar regions or invalid calculations.
 pub fn calculate_visibility(
     datetime: DateTime<Utc>,
     coords: GeoCoordinate,
     criteria: &VisibilityCriteria,
-) -> MoonVisibilityReport {
+) -> Result<MoonVisibilityReport, crate::calendar::ShaumError> {
     let date = datetime.date_naive();
     
     // 1. Find sunset time for observation
-    let sunset = estimate_sunset(date, coords);
+    let sunset = estimate_sunset(date, coords)?;
     let jd = datetime_to_jd(sunset);
     
     // 2. Calculate Sun's position
@@ -206,7 +252,7 @@ pub fn calculate_visibility(
     let elongation = calculate_elongation(sun_lon, sun_lat, moon_lon, moon_lat);
     
     // 8. Calculate moon age
-    let last_new_moon = approximate_last_new_moon(sunset);
+    let last_new_moon = approximate_last_new_moon(sunset)?;
     let moon_age_hours = (sunset - last_new_moon).num_seconds() as f64 / 3600.0;
     
     // 9. Estimate lag time (simplified: difference in set times based on position)
@@ -217,7 +263,7 @@ pub fn calculate_visibility(
     // 10. Check criteria
     let meets_mabims = moon_alt >= criteria.min_altitude && elongation >= criteria.min_elongation;
     
-    MoonVisibilityReport {
+    Ok(MoonVisibilityReport {
         moon_altitude: moon_alt,
         sun_altitude: sun_alt,
         elongation,
@@ -225,5 +271,5 @@ pub fn calculate_visibility(
         lag_time_minutes,
         meets_mabims,
         observation_time: sunset,
-    }
+    })
 }
