@@ -35,6 +35,8 @@ fn main() -> Result<()> {
         "sync-versions" => sync_versions()?,
         "publish-jsr" => publish_jsr(dry_run)?,
         "publish-npm" => publish_npm(dry_run)?,
+        "publish-pypi" => publish_pypi(dry_run)?,
+        "publish-crates" => publish_crates(dry_run)?,
         "publish-all" => publish_all(dry_run)?,
         "-h" | "--help" | "help" => print_usage(),
         cmd => {
@@ -69,9 +71,11 @@ BUILD COMMANDS:
     sync-versions Sync version from Cargo.toml to all manifests
 
 PUBLISH COMMANDS:
-    publish-jsr   Publish to JSR.io (Deno/TypeScript)
-    publish-npm   Publish to NPM
-    publish-all   Publish to all registries
+    publish-crates  Publish all crates to crates.io
+    publish-jsr     Publish to JSR.io (Deno/TypeScript)
+    publish-npm     Publish to NPM
+    publish-pypi    Publish to PyPI (Python)
+    publish-all     Publish to all registries
 
 OPTIONS:
     --dry-run, -n   Validate without actually publishing
@@ -444,14 +448,102 @@ fn publish_npm(dry_run: bool) -> Result<()> {
 }
 
 // =============================================================================
+// Task: publish-pypi
+// =============================================================================
+
+fn publish_pypi(dry_run: bool) -> Result<()> {
+    println!("\n🐍 Publishing to PyPI...\n");
+    
+    let root = project_root()?;
+    let py_dir = root.join("bindings").join("shaum_py");
+    
+    // Check if maturin is available
+    if !command_exists("maturin") {
+        println!("  ⚠️  'maturin' not found. Installing...");
+        run_cmd("pip", &["install", "maturin"])?;
+    }
+    
+    if dry_run {
+        println!("  🔍 Dry run mode - building wheel only...");
+        run_cmd_in_dir(&py_dir, "maturin", &["build", "--release"])?;
+        println!("\n✅ Python wheel built successfully!");
+    } else {
+        run_cmd_in_dir(&py_dir, "maturin", &["publish"])?;
+        println!("\n✅ Published to PyPI!");
+    }
+    
+    Ok(())
+}
+
+// =============================================================================
+// Task: publish-crates
+// =============================================================================
+
+/// Workspace crates in dependency order (leaves first, facade last)
+const WORKSPACE_CRATES: &[&str] = &[
+    "shaum-types",      // No internal deps
+    "shaum-calendar",   // Depends on shaum-types
+    "shaum-astronomy",  // Depends on shaum-types
+    "shaum-rules",      // Depends on shaum-types, shaum-calendar, shaum-astronomy
+    "shaum-network",    // Depends on shaum-types
+    "shaum-core",       // Facade - depends on all above
+];
+
+fn publish_crates(dry_run: bool) -> Result<()> {
+    println!("\n📦 Publishing crates to crates.io...\n");
+    
+    let root = project_root()?;
+    
+    for crate_name in WORKSPACE_CRATES {
+        println!("  📦 Publishing {}...", crate_name);
+        
+        // Determine crate directory
+        let crate_dir = if *crate_name == "shaum-core" {
+            root.join("crates").join("shaum_core")
+        } else {
+            root.join("crates").join(crate_name)
+        };
+        
+        let mut args = vec!["publish"];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        
+        run_cmd_in_dir(&crate_dir, "cargo", &args)?;
+        println!("  ✅ {} published!", crate_name);
+        
+        // Sleep between publishes to avoid rate limiting
+        if !dry_run {
+            println!("  ⏳ Waiting 30s for crates.io index update...");
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        }
+    }
+    
+    if dry_run {
+        println!("\n✅ All crates validated!");
+    } else {
+        println!("\n✅ All crates published to crates.io!");
+    }
+    
+    Ok(())
+}
+
+// =============================================================================
 // Task: publish-all
 // =============================================================================
 
 fn publish_all(dry_run: bool) -> Result<()> {
     println!("\n🚀 Publishing to all registries...\n");
     
+    // Crates.io first (other platforms may depend on it)
+    publish_crates(dry_run)?;
+    
+    // Web platforms
     publish_jsr(dry_run)?;
     publish_npm(dry_run)?;
+    
+    // Python
+    publish_pypi(dry_run)?;
     
     println!("\n✅ All publishing complete!");
     Ok(())
