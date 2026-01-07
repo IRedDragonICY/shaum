@@ -12,9 +12,9 @@ default = []
 async = ["dep:reqwest"]
 
 [dependencies]
-shaum-types = { path = "../shaum-types" }
-shaum-calendar = { path = "../shaum-calendar" }
-shaum-astronomy = { path = "../shaum-astronomy" }
+shaum-types = { version = "0.8.0", path = "../shaum-types" }
+shaum-calendar = { version = "0.8.0", path = "../shaum-calendar" }
+shaum-astronomy = { version = "0.8.0", path = "../shaum-astronomy" }
 chrono = { workspace = true }
 serde = { workspace = true }
 smallvec = { workspace = true }

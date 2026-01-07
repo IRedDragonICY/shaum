@@ -13,7 +13,7 @@ local-geo = ["dep:maxminddb"]
 async = []
 
 [dependencies]
-shaum-types = { path = "../shaum-types" }
+shaum-types = { version = "0.8.0", path = "../shaum-types" }
 chrono = { workspace = true }
 reqwest = { workspace = true }
 maxminddb = { workspace = true, optional = true }

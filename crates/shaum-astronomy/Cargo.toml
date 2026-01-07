@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-shaum-types = { path = "../shaum-types" }
+shaum-types = { version = "0.8.0", path = "../shaum-types" }
 chrono = { workspace = true }
 vsop87 = { workspace = true }
 astro = { workspace = true }
