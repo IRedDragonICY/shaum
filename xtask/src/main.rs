@@ -311,6 +311,15 @@ fn dist_web() -> Result<()> {
     // Sync JSR config files
     sync_jsr_files(&root)?;
     
+    // Patch package.json name for NPM
+    let pkg_json = pkg_dir.join("package.json");
+    if pkg_json.exists() {
+        let content = fs::read_to_string(&pkg_json)?;
+        let new_content = content.replace("\"name\": \"shaum-wasm\"", "\"name\": \"@islamic/shaum\"");
+        fs::write(&pkg_json, new_content)?;
+        println!("  ✅ Patched package.json: name = @islamic/shaum");
+    }
+    
     println!("\n✅ WASM build complete!");
     println!("   Web: dist/web/");
     println!("   NPM/JSR: pkg/");
@@ -509,8 +518,27 @@ fn publish_crates(dry_run: bool) -> Result<()> {
             args.push("--dry-run");
         }
         
-        run_cmd_in_dir(&crate_dir, "cargo", &args)?;
-        println!("  ✅ {} published!", crate_name);
+        // Run and capture output to handle "already exists" gracefully
+        let output = std::process::Command::new("cargo")
+            .args(&args)
+            .current_dir(&crate_dir)
+            .output()
+            .with_context(|| format!("Failed to run cargo publish for {}", crate_name))?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        if output.status.success() {
+            println!("  ✅ {} published!", crate_name);
+        } else if stderr.contains("already exists") {
+            println!("  ⏭️  {} already published, skipping...", crate_name);
+            continue;
+        } else {
+            // Print the error and fail
+            eprintln!("{}", stdout);
+            eprintln!("{}", stderr);
+            bail!("Failed to publish {}", crate_name);
+        }
         
         // Sleep between publishes to avoid rate limiting
         if !dry_run {
