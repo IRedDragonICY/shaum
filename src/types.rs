@@ -325,16 +325,44 @@ impl fmt::Display for TraceCode {
     }
 }
 
+/// Payload for deferred trace formatting. Only `CustomReason` allocates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TracePayload {
+    /// No additional details.
+    None,
+    /// Post-Maghrib offset applied (+1 day).
+    PostMaghribOffset,
+    /// User-provided custom reason (allocates).
+    CustomReason(String),
+}
+
+impl fmt::Display for TracePayload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => Ok(()),
+            Self::PostMaghribOffset => write!(f, "Post-Maghrib: Effective date +1"),
+            Self::CustomReason(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// Rule trace event for explainability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleTrace {
     pub code: TraceCode,
-    pub details: Option<String>,
+    pub payload: TracePayload,
 }
 
 impl RuleTrace {
-    pub fn new(code: TraceCode, details: impl Into<Option<String>>) -> Self {
-        Self { code, details: details.into() }
+    /// Creates a trace with a specific payload.
+    pub fn new(code: TraceCode, payload: TracePayload) -> Self {
+        Self { code, payload }
+    }
+    
+    /// Creates a simple trace with no payload details.
+    #[inline]
+    pub fn simple(code: TraceCode) -> Self {
+        Self { code, payload: TracePayload::None }
     }
 }
 
@@ -408,10 +436,9 @@ impl FastingAnalysis {
             self.generate_explanation()
         } else {
             self.traces.iter()
-                .map(|t| if let Some(d) = &t.details {
-                    format!("{}: {}", t.code, d)
-                } else {
-                    t.code.to_string()
+                .map(|t| match &t.payload {
+                    TracePayload::None => t.code.to_string(),
+                    payload => format!("{}: {}", t.code, payload),
                 })
                 .collect::<Vec<_>>()
                 .join("; ")

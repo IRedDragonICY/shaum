@@ -1,18 +1,23 @@
-use chrono::{Datelike, NaiveDate, Weekday, DateTime, Utc, TimeZone, Duration};
+use chrono::{Datelike, NaiveDate, Weekday, DateTime, Utc, TimeZone};
 use crate::calendar::{ShaumError, to_hijri, HIJRI_MIN_YEAR, HIJRI_MAX_YEAR};
-use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy, RuleTrace, TraceCode, GeoCoordinate, VisibilityCriteria};
+use crate::types::{FastingAnalysis, FastingStatus, FastingType, Madhab, DaudStrategy, RuleTrace, TraceCode, GeoCoordinate, VisibilityCriteria, TracePayload};
 use crate::constants::*;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
+#[cfg(feature = "async")]
+use serde::Deserialize;
 use smallvec::SmallVec;
 
-#[cfg(feature = "async")]
-use async_trait::async_trait;
-
 /// Moon sighting adjustment provider.
-#[cfg_attr(feature = "async", async_trait)]
+/// 
+/// When the `async` feature is enabled, returns a pinned boxed future.
+/// Otherwise, returns a synchronous result.
 pub trait MoonProvider: std::fmt::Debug + Send + Sync {
     #[cfg(feature = "async")]
-    async fn get_adjustment(&self, date: NaiveDate, coords: Option<GeoCoordinate>) -> Result<i64, ShaumError>;
+    fn get_adjustment(
+        &self,
+        date: NaiveDate,
+        coords: Option<GeoCoordinate>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, ShaumError>> + Send + '_>>;
     
     #[cfg(not(feature = "async"))]
     fn get_adjustment(&self, date: NaiveDate, coords: Option<GeoCoordinate>) -> Result<i64, ShaumError>;
@@ -26,11 +31,15 @@ impl FixedAdjustment {
     pub fn new(offset: i64) -> Self { Self(offset.clamp(-30, 30)) }
 }
 
-#[cfg_attr(feature = "async", async_trait)]
 impl MoonProvider for FixedAdjustment {
     #[cfg(feature = "async")]
-    async fn get_adjustment(&self, _date: NaiveDate, _coords: Option<GeoCoordinate>) -> Result<i64, ShaumError> {
-        Ok(self.0)
+    fn get_adjustment(
+        &self,
+        _date: NaiveDate,
+        _coords: Option<GeoCoordinate>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, ShaumError>> + Send + '_>> {
+        let val = self.0;
+        Box::pin(async move { Ok(val) })
     }
 
     #[cfg(not(feature = "async"))]
@@ -43,11 +52,14 @@ impl MoonProvider for FixedAdjustment {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoAdjustment;
 
-#[cfg_attr(feature = "async", async_trait)]
 impl MoonProvider for NoAdjustment {
     #[cfg(feature = "async")]
-    async fn get_adjustment(&self, _date: NaiveDate, _coords: Option<GeoCoordinate>) -> Result<i64, ShaumError> {
-        Ok(0)
+    fn get_adjustment(
+        &self,
+        _date: NaiveDate,
+        _coords: Option<GeoCoordinate>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, ShaumError>> + Send + '_>> {
+        Box::pin(async move { Ok(0) })
     }
 
     #[cfg(not(feature = "async"))]
@@ -75,28 +87,32 @@ impl RemoteMoonProvider {
 }
 
 #[cfg(feature = "async")]
-#[async_trait]
 impl MoonProvider for RemoteMoonProvider {
-    async fn get_adjustment(&self, _date: NaiveDate, _coords: Option<GeoCoordinate>) -> Result<i64, ShaumError> {
-        // Simple implementation: GET endpoint/adjustment -> returns JSON number or simple text
-        // For production, this should probably send the date as query param.
-        // Assuming API returns JSON: { "adjustment": 1 }
+    fn get_adjustment(
+        &self,
+        _date: NaiveDate,
+        _coords: Option<GeoCoordinate>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, ShaumError>> + Send + '_>> {
+        let endpoint = self.endpoint.clone();
+        let client = self.client.clone();
         
-        #[derive(Deserialize)]
-        struct AdjustmentResponse {
-            adjustment: i64,
-        }
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct AdjustmentResponse {
+                adjustment: i64,
+            }
 
-        let resp = self.client.get(&self.endpoint)
-            .send()
-            .await
-            .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
-            
-        let data = resp.json::<AdjustmentResponse>()
-            .await
-            .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
-            
-        Ok(data.adjustment)
+            let resp = client.get(&endpoint)
+                .send()
+                .await
+                .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
+                
+            let data = resp.json::<AdjustmentResponse>()
+                .await
+                .map_err(|e| ShaumError::NetworkError(e.to_string()))?;
+                
+            Ok(data.adjustment)
+        })
     }
 }
 
@@ -279,7 +295,7 @@ pub fn analyze(
         if datetime > sunset {
             effective_date = effective_date.succ_opt()
                 .ok_or_else(|| ShaumError::date_out_of_range(effective_date))?;
-            traces.push(RuleTrace::new(TraceCode::Debug, Some("Post-Maghrib: Effective date +1".to_string())));
+            traces.push(RuleTrace::new(TraceCode::Debug, TracePayload::PostMaghribOffset));
         }
     }
 
@@ -311,46 +327,46 @@ pub fn analyze(
     // Haram Priority
     if h_month == MONTH_SHAWWAL && h_day == 1 {
         types.push(FastingType::EID_AL_FITR);
-        traces.push(RuleTrace::new(TraceCode::EidAlFitr, None));
+        traces.push(RuleTrace::simple(TraceCode::EidAlFitr));
         return Ok(FastingAnalysis::with_traces(datetime, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
     }
 
     if h_month == MONTH_DHUL_HIJJAH && h_day == 10 {
         types.push(FastingType::EID_AL_ADHA);
-        traces.push(RuleTrace::new(TraceCode::EidAlAdha, None));
+        traces.push(RuleTrace::simple(TraceCode::EidAlAdha));
         return Ok(FastingAnalysis::with_traces(datetime, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
     }
 
     if h_month == MONTH_DHUL_HIJJAH && (11..=13).contains(&h_day) {
         types.push(FastingType::TASHRIQ);
-        traces.push(RuleTrace::new(TraceCode::Tashriq, None));
+        traces.push(RuleTrace::simple(TraceCode::Tashriq));
         return Ok(FastingAnalysis::with_traces(datetime, FastingStatus::Haram, types, (h_year, h_month, h_day), traces));
     }
 
     // Wajib
     if h_month == MONTH_RAMADHAN {
         types.push(FastingType::RAMADHAN);
-        traces.push(RuleTrace::new(TraceCode::Ramadhan, None));
+        traces.push(RuleTrace::simple(TraceCode::Ramadhan));
         status = FastingStatus::Wajib;
     }
 
     // Sunnah Muakkadah
     if h_month == MONTH_DHUL_HIJJAH && h_day == DAY_ARAFAH {
         types.push(FastingType::ARAFAH);
-        traces.push(RuleTrace::new(TraceCode::Arafah, None));
+        traces.push(RuleTrace::simple(TraceCode::Arafah));
         if !status.is_wajib() { status = FastingStatus::SunnahMuakkadah; }
     }
 
     if h_month == MONTH_MUHARRAM && h_day == DAY_ASHURA {
         types.push(FastingType::ASHURA);
-        traces.push(RuleTrace::new(TraceCode::Ashura, None));
+        traces.push(RuleTrace::simple(TraceCode::Ashura));
         if !status.is_wajib() { status = FastingStatus::SunnahMuakkadah; }
     }
 
     // Sunnah
     if h_month == MONTH_MUHARRAM && h_day == DAY_TASUA {
         types.push(FastingType::TASUA);
-        traces.push(RuleTrace::new(TraceCode::Tasua, None));
+        traces.push(RuleTrace::simple(TraceCode::Tasua));
         if !status.is_wajib() && status != FastingStatus::SunnahMuakkadah { 
             status = FastingStatus::Sunnah; 
         }
@@ -358,7 +374,7 @@ pub fn analyze(
 
     if (13..=15).contains(&h_day) {
         types.push(FastingType::AYYAMUL_BIDH);
-        traces.push(RuleTrace::new(TraceCode::AyyamulBidh, None));
+        traces.push(RuleTrace::simple(TraceCode::AyyamulBidh));
         if !status.is_wajib() && status < FastingStatus::Sunnah {
             status = FastingStatus::Sunnah;
         }
@@ -367,12 +383,12 @@ pub fn analyze(
     match weekday {
         Weekday::Mon => {
             types.push(FastingType::MONDAY);
-            traces.push(RuleTrace::new(TraceCode::Monday, None));
+            traces.push(RuleTrace::simple(TraceCode::Monday));
             if !status.is_wajib() && status < FastingStatus::Sunnah { status = FastingStatus::Sunnah; }
         },
         Weekday::Thu => {
             types.push(FastingType::THURSDAY);
-            traces.push(RuleTrace::new(TraceCode::Thursday, None));
+            traces.push(RuleTrace::simple(TraceCode::Thursday));
             if !status.is_wajib() && status < FastingStatus::Sunnah { status = FastingStatus::Sunnah; }
         },
         _ => {}
@@ -380,7 +396,7 @@ pub fn analyze(
 
     if h_month == MONTH_SHAWWAL && h_day > 1 {
         types.push(FastingType::SHAWWAL);
-        traces.push(RuleTrace::new(TraceCode::Shawwal, None));
+        traces.push(RuleTrace::simple(TraceCode::Shawwal));
         if !status.is_wajib() && status < FastingStatus::Sunnah { status = FastingStatus::Sunnah; }
     }
 
@@ -390,11 +406,11 @@ pub fn analyze(
             Madhab::Shafi | Madhab::Hanafi | Madhab::Maliki | Madhab::Hanbali => {
                 if weekday == Weekday::Fri {
                     types.push(FastingType::FRIDAY_EXCLUSIVE);
-                    traces.push(RuleTrace::new(TraceCode::FridaySingledOut, None));
+                    traces.push(RuleTrace::simple(TraceCode::FridaySingledOut));
                     status = FastingStatus::Makruh;
                 } else if weekday == Weekday::Sat {
                     types.push(FastingType::SATURDAY_EXCLUSIVE);
-                    traces.push(RuleTrace::new(TraceCode::SaturdaySingledOut, None));
+                    traces.push(RuleTrace::simple(TraceCode::SaturdaySingledOut));
                     status = FastingStatus::Makruh;
                 }
             }
@@ -405,7 +421,7 @@ pub fn analyze(
     for rule in &context.custom_rules {
         if let Some((custom_status, custom_type)) = rule.evaluate(effective_date, h_year, h_month, h_day) {
             types.push(custom_type.clone());
-            traces.push(RuleTrace::new(TraceCode::Custom, Some(custom_type.to_string())));
+            traces.push(RuleTrace::new(TraceCode::Custom, TracePayload::CustomReason(custom_type.to_string())));
             if custom_status > status { status = custom_status; }
         }
     }
