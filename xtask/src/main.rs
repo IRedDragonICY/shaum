@@ -466,6 +466,9 @@ fn publish_pypi(dry_run: bool) -> Result<()> {
     let root = project_root()?;
     let py_dir = root.join("bindings").join("shaum_py");
     
+    // Copy README.md to bindings/shaum_py so maturin can find it
+    copy_file(&root.join("README.md"), &py_dir.join("README.md"))?;
+    
     // Determine command: "maturin" or "python -m maturin"
     let cmd_args = if command_exists("maturin") {
         vec!["maturin"]
