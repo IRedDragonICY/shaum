@@ -116,76 +116,7 @@ impl LocalGeoProvider {
     }
 }
 
-// =============================================================================
-// Async HTTP Lookup (legacy, requires network)
-// =============================================================================
 
-/// Response from ip-api.com (legacy HTTP approach)
-#[cfg(feature = "async")]
-#[derive(Debug, Deserialize)]
-struct IpApiResponse {
-    status: String,
-    lat: Option<f64>,
-    lon: Option<f64>,
-    city: Option<String>,
-    #[serde(rename = "regionName")]
-    region_name: Option<String>,
-    country: Option<String>,
-    message: Option<String>,
-}
-
-/// Fetches geographic coordinates based on the caller's IP address.
-///
-/// **Deprecated**: Uses ip-api.com HTTP request. Consider using `LocalGeoProvider`
-/// with the `local-geo` feature for privacy-preserving offline lookups.
-#[cfg(feature = "async")]
-#[deprecated(since = "0.6.0", note = "Use LocalGeoProvider with local-geo feature for privacy")]
-pub async fn get_location_from_ip() -> Result<GeoCoordinate, ShaumError> {
-    #[allow(deprecated)]
-    let info = get_location_info_from_ip().await?;
-    Ok(info.coords)
-}
-
-/// Fetches full location info (coordinates + place name) based on IP address.
-///
-/// **Deprecated**: Uses ip-api.com HTTP request. Consider using `LocalGeoProvider`
-/// with the `local-geo` feature for privacy-preserving offline lookups.
-#[cfg(feature = "async")]
-#[deprecated(since = "0.6.0", note = "Use LocalGeoProvider with local-geo feature for privacy")]
-pub async fn get_location_info_from_ip() -> Result<LocationInfo, ShaumError> {
-    let client = reqwest::Client::new();
-    
-    let response = client
-        .get("http://ip-api.com/json/")
-        .send()
-        .await
-        .map_err(|e| ShaumError::NetworkError(format!("Failed to reach ip-api.com: {}", e)))?;
-
-    let data: IpApiResponse = response
-        .json()
-        .await
-        .map_err(|e| ShaumError::NetworkError(format!("Failed to parse response: {}", e)))?;
-
-    if data.status != "success" {
-        return Err(ShaumError::NetworkError(
-            data.message.unwrap_or_else(|| "Unknown error from ip-api.com".to_string())
-        ));
-    }
-
-    let lat = data.lat.ok_or_else(|| 
-        ShaumError::NetworkError("Missing latitude in response".to_string())
-    )?;
-    let lon = data.lon.ok_or_else(|| 
-        ShaumError::NetworkError("Missing longitude in response".to_string())
-    )?;
-
-    Ok(LocationInfo {
-        coords: GeoCoordinate::new_unchecked(lat, lon),
-        city: data.city,
-        region: data.region_name,
-        country: data.country,
-    })
-}
 
 // =============================================================================
 // Nominatim Reverse Geocoding (OpenStreetMap - detailed address lookup)

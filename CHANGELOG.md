@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-01-07
+
+### Removed
+- **Privacy**: Completely removed deprecated `ip-api.com` integration. Users must now use `LocalGeoProvider` (offline MaxMind) or `reverse_geocode` (Nominatim) for location services.
+
 ## [0.7.0] - 2026-01-07
 
 ### Added
