@@ -1,0 +1,35 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "shaum"
+version = "0.8.0"
+description = "Islamic fasting rules engine - determine Wajib, Sunnah, Makruh, Haram status for any date"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Mohammad Farid Hendianto" }]
+keywords = ["islam", "fasting", "fiqh", "hijri", "ramadan", "calendar"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Religion",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/IRedDragonICY/shaum"
+Repository = "https://github.com/IRedDragonICY/shaum"
+Documentation = "https://docs.rs/shaum"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

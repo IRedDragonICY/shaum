@@ -1,0 +1,15 @@
+[package]
+name = "shaum-calendar"
+description = "Hijri calendar conversion for shaum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+shaum-types = { path = "../shaum-types" }
+chrono = { workspace = true }
+hijri_date = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }

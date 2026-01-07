@@ -1,0 +1,18 @@
+{
+    "name": "@islam/shaum",
+    "version": "0.8.0",
+    "license": "MIT",
+    "exports": "./mod.ts",
+    "publish": {
+        "include": [
+            "jsr.json",
+            "mod.ts",
+            "types.ts",
+            "shaum.js",
+            "shaum.d.ts",
+            "shaum_bg.wasm",
+            "README.md",
+            "LICENSE"
+        ]
+    }
+}

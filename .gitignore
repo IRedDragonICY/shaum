@@ -1,1 +1,5 @@
 /target
+/dist
+*.whl
+*.pyi
+Cargo.lock

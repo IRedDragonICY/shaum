@@ -1,0 +1,27 @@
+[package]
+name = "shaum-wasm"
+description = "WebAssembly bindings for shaum - Islamic fasting rules engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+shaum-core = { workspace = true }
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+tsify = { workspace = true }
+console_error_panic_hook = { workspace = true }
+getrandom = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

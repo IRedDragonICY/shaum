@@ -1,0 +1,7 @@
+[alias]
+xtask = "run --package xtask --"
+
+# Fix for Rust 1.82+ WASM builds with wasm-opt compatibility
+# Disable bulk memory operations which newer Rust emits by default
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=-bulk-memory"]

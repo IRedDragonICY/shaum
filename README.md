@@ -2,6 +2,11 @@
 
 A production-grade Rust library for Islamic fasting (Shaum) jurisprudence with high-precision astronomical calculations for Hilal visibility.
 
+[![Crates.io](https://img.shields.io/crates/v/shaum)](https://crates.io/crates/shaum)
+[![NPM](https://img.shields.io/npm/v/shaum-wasm)](https://www.npmjs.com/package/shaum-wasm)
+[![JSR](https://jsr.io/badges/@islam/shaum)](https://jsr.io/@islam/shaum)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ## Features
 
 ### Fiqh Engine
@@ -13,7 +18,7 @@ A production-grade Rust library for Islamic fasting (Shaum) jurisprudence with h
   - **Sunnah**: Arafah, Ashura, Tasu'a, Ayyamul Bidh, Mondays, Thursdays, Shawwal
   - **Makruh**: Singling out Friday or Saturday
 
-### Astronomy Engine (v0.5.0)
+### Astronomy Engine
 Native high-precision ephemeris calculations for Hilal visibility determination:
 - **Sun Position**: VSOP87 theory (~1 arcsec precision)
 - **Moon Position**: ELP2000-82 theory (~1 arcsec precision)
@@ -23,38 +28,62 @@ Native high-precision ephemeris calculations for Hilal visibility determination:
 
 **Validated against 87 years of historical Indonesian Ramadan dates (1938-2024).**
 
-## Usage
+## Installation
 
+### Rust
 ```toml
 [dependencies]
-shaum = "0.5"
+shaum = "0.8"
 ```
 
-### Fasting Status
+### JavaScript/TypeScript (NPM)
+```bash
+npm install shaum-wasm
+```
+
+### Deno (JSR)
+```typescript
+import { analyze } from "jsr:@islam/shaum";
+```
+
+## Usage
+
+### Rust
 ```rust
 use shaum::prelude::*;
 use chrono::NaiveDate;
 
 let date = NaiveDate::from_ymd_opt(2025, 6, 5).unwrap();
-let analysis = shaum::analyze_date(date);
+let analysis = shaum::analyze_date(date)?;
 
 println!("Status: {:?}", analysis.primary_status);
 ```
 
-### Hilal Visibility
-```rust
-use shaum::astronomy::visibility::calculate_visibility;
-use shaum::types::GeoCoordinate;
-use chrono::{Utc, TimeZone};
+### JavaScript
+```javascript
+import init, { analyze } from 'shaum-wasm';
 
-let jakarta = GeoCoordinate { lat: -6.2088, lng: 106.8456 };
-let sunset = Utc.with_ymd_and_hms(2026, 2, 17, 11, 0, 0).unwrap();
+await init();
 
-let report = calculate_visibility(sunset, jakarta);
+const result = analyze("2025-06-05");
+console.log(result.primaryStatus);
+```
 
-println!("Altitude: {:.2}°", report.moon_altitude);
-println!("Elongation: {:.2}°", report.elongation);
-println!("MABIMS: {}", report.meets_mabims);
+## Workspace Structure
+
+```
+shaum/
+├── crates/
+│   ├── shaum-types/       # Zero-dependency types
+│   ├── shaum-calendar/    # Hijri conversion
+│   ├── shaum-astronomy/   # VSOP87/ELP2000
+│   ├── shaum-rules/       # Fasting jurisprudence
+│   ├── shaum-network/     # Async geolocation
+│   └── shaum-core/        # Facade crate
+├── bindings/
+│   ├── shaum_wasm/        # WebAssembly
+│   └── shaum_py/          # Python (pyo3)
+└── xtask/                 # Build automation
 ```
 
 ## Validation

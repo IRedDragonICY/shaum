@@ -1,0 +1,13 @@
+[package]
+name = "shaum-types"
+description = "Core types for shaum - Islamic fasting rules engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+serde = { version = "1.0", features = ["derive", "std", "alloc"] }
+smallvec = { workspace = true }

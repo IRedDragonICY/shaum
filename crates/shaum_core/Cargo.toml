@@ -1,0 +1,28 @@
+[package]
+name = "shaum-core"
+description = "Islamic Fasting Rules Engine - Core Logic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+async = ["shaum-rules/async", "shaum-network"]
+local-geo = ["shaum-network?/local-geo"]
+
+[dependencies]
+shaum-types = { workspace = true }
+shaum-calendar = { workspace = true }
+shaum-astronomy = { workspace = true }
+shaum-rules = { workspace = true }
+shaum-network = { workspace = true, optional = true }
+
+# Dependencies for re-exports if needed, or dev-deps
+chrono = { workspace = true }
+
+[dev-dependencies]
+hijri_date = "0.5.1"
+anyhow = "1.0"
+proptest = "1.0"

@@ -1,0 +1,21 @@
+[package]
+name = "shaum-rules"
+description = "Fasting rules engine for shaum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+async = ["dep:reqwest"]
+
+[dependencies]
+shaum-types = { path = "../shaum-types" }
+shaum-calendar = { path = "../shaum-calendar" }
+shaum-astronomy = { path = "../shaum-astronomy" }
+chrono = { workspace = true }
+serde = { workspace = true }
+smallvec = { workspace = true }
+reqwest = { workspace = true, optional = true }

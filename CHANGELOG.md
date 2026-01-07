@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-01-07
+
+### Added
+- **Cargo Workspace**: Refactored into multi-crate workspace architecture:
+  - `shaum-types` - Zero-dependency types (FastingStatus, GeoCoordinate, etc.)
+  - `shaum-calendar` - Hijri calendar conversion
+  - `shaum-astronomy` - VSOP87/ELP2000 astronomical calculations
+  - `shaum-rules` - Fasting rules engine
+  - `shaum-network` - Optional async network features
+  - `shaum-core` - Facade re-exporting all crates
+- **WASM Bindings**: `bindings/shaum_wasm` with `wasm-pack` support
+  - `analyze(date)` function for JavaScript
+  - `Shaum` class-based API
+  - TypeScript definitions auto-generated via `tsify`
+- **Python Bindings**: `bindings/shaum_py` with `pyo3` + `maturin`
+- **XTask Automation**: `xtask` crate for build automation
+  - `cargo xtask dist-web` - Build WASM + JSR/NPM packages
+  - `cargo xtask dist-python` - Build Python wheel
+  - `cargo xtask publish-all --dry-run` - Validate all registries
+  - `cargo xtask sync-versions` - Sync versions across manifests
+- **JSR/NPM Support**: Ready for publishing to JSR.io and NPM
+
+### Changed
+- **Dependencies Updated to Latest**:
+  - `thiserror` 1.0 → 2.0 (major)
+  - `pyo3` 0.23 → 0.27 (major)
+  - `getrandom` 0.2 → 0.3 (major)
+  - `criterion` 0.5 → 0.8 (major)
+  - `wasm-bindgen` 0.2.100 → 0.2.106
+  - `smallvec` 1.11 → 1.15
+  - `proptest` 1.4 → 1.9
+  - `reqwest` 0.11 → 0.12
+  - `maxminddb` 0.24 → 0.27
+- **Migrated**: `tsify-next` → `tsify` (deprecated crate)
+- **Edition**: Upgraded to Rust 2024 edition
+
+### Fixed
+- **WASM Build**: Disabled `wasm-opt` for Rust 1.82+ compatibility (bulk memory operations)
+
 ## [0.7.1] - 2026-01-07
 
 ### Removed

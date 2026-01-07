@@ -1,0 +1,17 @@
+[package]
+name = "shaum-py"
+description = "Python bindings for shaum - Islamic fasting rules engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "shaum"
+crate-type = ["cdylib"]
+
+[dependencies]
+shaum-core = { workspace = true }
+pyo3 = { workspace = true }
+chrono = { workspace = true }

@@ -1,0 +1,20 @@
+[package]
+name = "shaum-network"
+description = "Network features for shaum - IP geolocation and remote APIs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+local-geo = ["dep:maxminddb"]
+async = []
+
+[dependencies]
+shaum-types = { path = "../shaum-types" }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+maxminddb = { workspace = true, optional = true }
+serde = { workspace = true }
