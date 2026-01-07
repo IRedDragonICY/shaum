@@ -466,18 +466,42 @@ fn publish_pypi(dry_run: bool) -> Result<()> {
     let root = project_root()?;
     let py_dir = root.join("bindings").join("shaum_py");
     
-    // Check if maturin is available
-    if !command_exists("maturin") {
-        println!("  ⚠️  'maturin' not found. Installing...");
+    // Determine command: "maturin" or "python -m maturin"
+    let cmd_args = if command_exists("maturin") {
+        vec!["maturin"]
+    } else {
+        // Try to update/install
+        println!("  ⚠️  'maturin' command not found in PATH. Checking pip...");
         run_cmd("pip", &["install", "maturin"])?;
-    }
+        
+        // Check if it's runnable via python module
+        let status = std::process::Command::new("python")
+             .args(&["-m", "maturin", "--version"])
+             .stdout(std::process::Stdio::null())
+             .stderr(std::process::Stdio::null())
+             .status();
+             
+        if status.map(|s| s.success()).unwrap_or(false) {
+            println!("  ℹ️  Using 'python -m maturin'");
+            vec!["python", "-m", "maturin"]
+        } else {
+            // Warn but try 'maturin' anyway (maybe path updated?)
+            println!("  ⚠️  Could not verify 'maturin'. Assuming it's in PATH or will fail.");
+            vec!["maturin"]
+        }
+    };
+    
+    let (prog, base_args) = (cmd_args[0], &cmd_args[1..]);
+    let mut args = base_args.to_vec();
     
     if dry_run {
         println!("  🔍 Dry run mode - building wheel only...");
-        run_cmd_in_dir(&py_dir, "maturin", &["build", "--release"])?;
+        args.extend_from_slice(&["build", "--release"]);
+        run_cmd_in_dir(&py_dir, prog, &args)?;
         println!("\n✅ Python wheel built successfully!");
     } else {
-        run_cmd_in_dir(&py_dir, "maturin", &["publish"])?;
+        args.push("publish");
+        run_cmd_in_dir(&py_dir, prog, &args)?;
         println!("\n✅ Published to PyPI!");
     }
     
